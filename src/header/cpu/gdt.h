@@ -24,6 +24,12 @@ extern struct GDTR _gdt_gdtr;
  * @param base_mid     8-bit middle-bit base address
  * @param type_bit     4-bit contain type flags
  * @param non_system   1-bit contain system
+ * @param privilege    2-bit privilege level (DPL)
+ * @param valid        1-bit present flag
+ * @param segment_high 4-bit higher-bit segment limit
+ * @param default_bit  1-bit operation size (0 = 16-bit, 1 = 32-bit)
+ * @param granularity  1-bit limit granularity (0 = 1 B, 1 = 4 KiB)
+ * @param base_high    8-bit higher-bit base address
  */
 struct SegmentDescriptor {
     // First 32-bit
@@ -32,10 +38,17 @@ struct SegmentDescriptor {
 
     // Next 16-bit (Bit 32 to 47)
     uint8_t base_mid;
-    uint8_t type_bit   : 4;
-    uint8_t non_system : 1;
-    // TODO : Continue SegmentDescriptor definition
+    uint8_t type_bit    : 4;
+    uint8_t non_system  : 1;
+    uint8_t privilege   : 2;
+    uint8_t valid       : 1;
 
+    // Last 16-bit (Bit 48 to 63)
+    uint8_t segment_high : 4;
+    uint8_t flags        : 2; // Reserved / Available for system use
+    uint8_t default_bit  : 1;
+    uint8_t granularity  : 1;
+    uint8_t base_high;
 } __attribute__((packed));
 
 /**
@@ -51,12 +64,18 @@ struct GlobalDescriptorTable {
  * GDTR, carrying information where's the GDT located and GDT size.
  * Global kernel variable defined at memory.c.
  * 
- * @param size    Global Descriptor Table size, use sizeof operator
+ * @param size        Global Descriptor Table size, use sizeof operator
  * @param address GDT address, GDT should already defined properly
  */
 struct GDTR {
-    uint16_t                     size;
+    uint16_t                    size;
     struct GlobalDescriptorTable *address;
 } __attribute__((packed));
+
+/**
+ * Load GDT to GDTR register and reload segment registers.
+ * @param gdtr Pointer to GDTR structure
+ */
+void load_gdt(struct GDTR *gdtr);
 
 #endif
