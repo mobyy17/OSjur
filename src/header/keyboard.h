@@ -53,7 +53,6 @@ void keyboard_state_deactivate(void);
  * @param buf tujuan salinan; diisi 0 kalau tidak ada karakter baru
  */
 void get_keyboard_buffer(char *buf);
- 
 
 void keyboard_isr(void);
 
