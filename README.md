@@ -57,6 +57,5 @@ qemu-system-i386 -s -S -drive file=storage.bin,format=raw,if=ide,index=0,media=d
 
 ### Maskot Kelompok
 
-Will Serfort
-
+Sunraku
 
