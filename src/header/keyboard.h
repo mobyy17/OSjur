@@ -35,6 +35,26 @@ struct KeyboardDriverState {
     char keyboard_buffer;
 } __attribute((packed));
 
+/**
+ * Menyalakan pembacaan input keyboard.
+ * Setelah dipanggil, ISR mulai menyimpan karakter ke buffer.
+ */
+void keyboard_state_activate(void);
+ 
+/**
+ * Mematikan pembacaan input keyboard.
+ * ISR tetap membaca scancode dan mengirim ACK, tapi tidak menyimpan karakter.
+ */
+void keyboard_state_deactivate(void);
+ 
+/**
+ * Menyalin isi keyboard_buffer ke pointer lalu mengosongkan buffer.
+ *
+ * @param buf tujuan salinan; diisi 0 kalau tidak ada karakter baru
+ */
+void get_keyboard_buffer(char *buf);
+
+void keyboard_isr(void);
 
 
 
