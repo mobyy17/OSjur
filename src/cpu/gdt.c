@@ -1,4 +1,4 @@
-#include "gdt.h"
+#include "../header/cpu/gdt.h"
 
 // Inisialisasi instance GDT dan GDTR global
 static struct GlobalDescriptorTable global_gdt = {
