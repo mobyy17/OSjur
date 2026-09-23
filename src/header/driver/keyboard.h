@@ -18,14 +18,14 @@
 /**
  * keyboard_scancode_1_to_ascii_map[256], Convert scancode values that correspond to ASCII printables
  * How to use this array: ascii_char = k[scancode]
- * 
+ *
  * By default, QEMU using scancode set 1 (from empirical testing)
  */
 extern const char keyboard_scancode_1_to_ascii_map[256];
 
 /**
  * KeyboardDriverState - Contain all driver states
- * 
+ *
  * @param read_extended_mode Optional, can be used for signaling next read is extended scancode (ex. arrow keys)
  * @param keyboard_input_on  Indicate whether keyboard ISR is activated or not
  * @param keyboard_buffer    Storing keyboard input values in ASCII
@@ -41,41 +41,23 @@ struct KeyboardDriverState {
  * Setelah dipanggil, ISR mulai menyimpan karakter ke buffer.
  */
 void keyboard_state_activate(void);
- 
+
 /**
  * Mematikan pembacaan input keyboard.
  * ISR tetap membaca scancode dan mengirim ACK, tapi tidak menyimpan karakter.
  */
 void keyboard_state_deactivate(void);
- 
+
 /**
  * Menyalin isi keyboard_buffer ke pointer lalu mengosongkan buffer.
- *
- * @param buf tujuan salinan; diisi 0 kalau tidak ada karakter baru
+ * @param buf Tujuan salinan; diisi 0 kalau tidak ada karakter baru
  */
 void get_keyboard_buffer(char *buf);
 
-void keyboard_isr(void);
-
-
-
-
-/* -- Driver Interfaces -- */
-
-// Activate keyboard ISR / start listen keyboard & save to buffer
-void keyboard_state_activate(void);
-
-// Deactivate keyboard ISR / stop listening keyboard interrupt
-void keyboard_state_deactivate(void);
-
-// Get keyboard buffer value and flush the buffer - @param buf Pointer to char buffer
-void get_keyboard_buffer(char *buf);
-
-/* -- Keyboard Interrupt Service Routine -- */
-
 /**
  * Handling keyboard interrupt & process scancodes into ASCII character.
- * Will start listen and process keyboard scancode if keyboard_input_on.
+ * Dipanggil main_interrupt_handler() untuk IRQ1. Selalu membaca 1 scancode dari KEYBOARD_DATA_PORT dan selalu mengirim pic_ack(), baik input sedang on maupun off.
+ * Karakter hanya disimpan ke buffer kalau keyboard_input_on bernilai true.
  */
 void keyboard_isr(void);
 
