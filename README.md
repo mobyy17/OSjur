@@ -49,8 +49,8 @@ qemu-system-i386 -s -S -drive file=storage.bin,format=raw,if=ide,index=0,media=d
 ### Fitur yang Dibuat
 
 - [x] **Chapter 0** - GDT (Null descriptor + Kernel Code/Data descriptor), kernel boot sampai QEMU tanpa triple fault
-- [ ] **Chapter 1 - Framebuffer** - driver `framebuffer_write`, `framebuffer_set_cursor`, `framebuffer_clear`
-- [ ] **Chapter 1 - Interrupt & Keyboard** - IDT, ISR, IRQ remap, keyboard driver
+- [x] **Chapter 1 - Framebuffer** - driver `framebuffer_write`, `framebuffer_set_cursor`, `framebuffer_clear`
+- [x] **Chapter 1 - Interrupt & Keyboard** - IDT, ISR, IRQ remap, keyboard driver
 - [ ] **Chapter 2 - File System** - disk driver, EXT2-IF2130, CRUD
 - [ ] **Chapter 3 - Paging & Shell** - paging, user mode, shell
 - [ ] **Chapter 4 - Process** - PCB, scheduler, context switch
