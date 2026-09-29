@@ -25,3 +25,23 @@ uint8_t in(uint16_t port) {
     );
     return result;
 }
+
+/** x86 inw/outw dimana dipakai disk driver (ATA PIO kirim data 2 byte sekali jalan) */
+
+void out16(uint16_t port, uint16_t data) {
+    __asm__(
+        "outw %0, %1"
+        : // <Empty output operand>
+        : "a"(data), "Nd"(port)
+    );
+}
+
+uint16_t in16(uint16_t port) {
+    uint16_t result;
+    __asm__ volatile(
+        "inw %1, %0"
+        : "=a"(result)
+        : "Nd"(port)
+    );
+    return result;
+}
