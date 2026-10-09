@@ -251,47 +251,248 @@ void initialize_filesystem_ext2(void) {
  * SECTION 2 - RAFI: layer block
  * ========================================================================== */
 
+#define DIRECT_BLOCKS   12u                              // i_block[0..11]
+#define PTRS_PER_BLOCK  (BLOCK_SIZE / sizeof(uint32_t))  // 128 pointer per block
+#define SINGLE_LIMIT    (DIRECT_BLOCKS + PTRS_PER_BLOCK) // block ke-0..139 muat tanpa doubly
+
+/* Jumlah block data untuk size byte, dibulatkan ke atas */
+static uint32_t data_block_count(uint32_t size) {
+    return (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+}
+
+/* Bebaskan satu block, bitmap group-nya di-cache di buffer supaya tidak
+ * baca-tulis bitmap untuk setiap block. last_bgd == GROUPS_COUNT artinya
+ * buffer belum berisi bitmap apa pun. */
+static void free_block_cached(uint32_t block, struct BlockBuffer *bitmap, uint32_t *last_bgd) {
+    if (block == 0)
+        return;
+
+    uint32_t bgd = block / BLOCKS_PER_GROUP;
+    uint32_t bit = block % BLOCKS_PER_GROUP;
+
+    if (*last_bgd != bgd) {
+        // ganti group: simpan bitmap lama dulu, baru load bitmap group baru
+        if (*last_bgd < GROUPS_COUNT)
+            write_blocks(bitmap, bgd_table.table[*last_bgd].bg_block_bitmap, 1);
+        read_blocks(bitmap, bgd_table.table[bgd].bg_block_bitmap, 1);
+        *last_bgd = bgd;
+    }
+
+    bitmap->buf[bit / 8] &= ~(1 << (bit % 8));
+    bgd_table.table[bgd].bg_free_blocks_count++;
+    superblock.s_free_blocks_count++;
+}
+
 uint32_t blocks_needed(uint32_t size) {
-    (void) size;
-    return 0;
+    uint32_t data = data_block_count(size);
+
+    if (data <= DIRECT_BLOCKS)
+        return data;
+    if (data <= SINGLE_LIMIT)
+        return data + 1; // + block single indirect
+
+    // + block single indirect + block doubly indirect + block indirect di bawah doubly
+    uint32_t rest = data - SINGLE_LIMIT;
+    return data + 2 + (rest + PTRS_PER_BLOCK - 1) / PTRS_PER_BLOCK;
 }
 
 uint32_t allocate_block(uint32_t prefered_bgd) {
-    (void) prefered_bgd;
-    return 0;
+    struct BlockBuffer bitmap;
+
+    // first fit, mulai dari group yang diminta, lalu group berikutnya (memutar)
+    for (uint32_t i = 0; i < GROUPS_COUNT; i++) {
+        uint32_t bgd = (prefered_bgd + i) % GROUPS_COUNT;
+        if (bgd_table.table[bgd].bg_free_blocks_count == 0)
+            continue;
+
+        uint32_t bitmap_block = bgd_table.table[bgd].bg_block_bitmap;
+        read_blocks(&bitmap, bitmap_block, 1);
+
+        for (uint32_t bit = 0; bit < BLOCKS_PER_GROUP; bit++) {
+            if (bitmap.buf[bit / 8] & (1 << (bit % 8)))
+                continue;
+
+            bitmap.buf[bit / 8] |= (1 << (bit % 8));
+            write_blocks(&bitmap, bitmap_block, 1);
+
+            // free count cuma di RAM, disimpan saat commit_metadata()
+            bgd_table.table[bgd].bg_free_blocks_count--;
+            superblock.s_free_blocks_count--;
+
+            return bgd * BLOCKS_PER_GROUP + bit;
+        }
+    }
+    return 0; // disk penuh
 }
 
+/* Pemanggil wajib cek dulu: blocks_needed(node->i_size) <= superblock.s_free_blocks_count.
+ * Fungsi ini tidak memanggil sync_node. */
 void allocate_node_blocks(void *ptr, struct EXT2Inode *node, uint32_t prefered_bgd) {
-    (void) ptr;
-    (void) node;
-    (void) prefered_bgd;
+    uint8_t *data  = (uint8_t *) ptr;
+    uint32_t count = data_block_count(node->i_size);
+
+    uint32_t single[PTRS_PER_BLOCK]; // isi block single indirect
+    uint32_t doubly[PTRS_PER_BLOCK]; // isi block doubly indirect
+    uint32_t sub[PTRS_PER_BLOCK];    // isi block indirect di bawah doubly yang sedang diisi
+    uint32_t sub_block = 0;
+    struct BlockBuffer last;
+
+    memset(single, 0, BLOCK_SIZE);
+    memset(doubly, 0, BLOCK_SIZE);
+    memset(sub, 0, BLOCK_SIZE);
+    for (uint32_t i = 0; i < 15; i++)
+        node->i_block[i] = 0;
+
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t block = allocate_block(prefered_bgd);
+
+        // tulis data. block terakhir yang tidak penuh disalin ke buffer
+        // berisi nol, supaya tidak membaca lewat ujung buffer pemanggil
+        if (i == count - 1 && node->i_size % BLOCK_SIZE != 0) {
+            memset(&last, 0, BLOCK_SIZE);
+            memcpy(last.buf, data + i * BLOCK_SIZE, node->i_size % BLOCK_SIZE);
+            write_blocks(&last, block, 1);
+        } else {
+            write_blocks(data + i * BLOCK_SIZE, block, 1);
+        }
+
+        // catat pointer ke block tersebut
+        if (i < DIRECT_BLOCKS) {
+            node->i_block[i] = block;
+        } else if (i < SINGLE_LIMIT) {
+            if (i == DIRECT_BLOCKS)
+                node->i_block[12] = allocate_block(prefered_bgd);
+            single[i - DIRECT_BLOCKS] = block;
+        } else {
+            uint32_t j = i - SINGLE_LIMIT;
+            if (j == 0)
+                node->i_block[13] = allocate_block(prefered_bgd);
+
+            // tiap 128 block butuh satu block indirect baru di bawah doubly
+            if (j % PTRS_PER_BLOCK == 0) {
+                if (sub_block != 0)
+                    write_blocks(sub, sub_block, 1);
+                sub_block = allocate_block(prefered_bgd);
+                memset(sub, 0, BLOCK_SIZE);
+                doubly[j / PTRS_PER_BLOCK] = sub_block;
+            }
+            sub[j % PTRS_PER_BLOCK] = block;
+        }
+    }
+
+    // block pointer baru ditulis setelah semua isinya lengkap
+    if (node->i_block[12] != 0)
+        write_blocks(single, node->i_block[12], 1);
+    if (node->i_block[13] != 0) {
+        write_blocks(sub, sub_block, 1);
+        write_blocks(doubly, node->i_block[13], 1);
+    }
+
+    node->i_blocks = count;
 }
 
 void read_node_data(struct EXT2Inode *node, void *buf) {
-    (void) node;
-    (void) buf;
+    uint8_t *data  = (uint8_t *) buf;
+    uint32_t count = data_block_count(node->i_size);
+
+    uint32_t single[PTRS_PER_BLOCK];
+    uint32_t doubly[PTRS_PER_BLOCK];
+    uint32_t sub[PTRS_PER_BLOCK];
+    struct BlockBuffer last;
+
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t block;
+
+        // cari nomor block ke-i, urutannya sama persis dengan allocate_node_blocks
+        if (i < DIRECT_BLOCKS) {
+            block = node->i_block[i];
+        } else if (i < SINGLE_LIMIT) {
+            if (i == DIRECT_BLOCKS)
+                read_blocks(single, node->i_block[12], 1);
+            block = single[i - DIRECT_BLOCKS];
+        } else {
+            uint32_t j = i - SINGLE_LIMIT;
+            if (j == 0)
+                read_blocks(doubly, node->i_block[13], 1);
+            if (j % PTRS_PER_BLOCK == 0)
+                read_blocks(sub, doubly[j / PTRS_PER_BLOCK], 1);
+            block = sub[j % PTRS_PER_BLOCK];
+        }
+
+        // salin tepat i_size byte, block terakhir jangan sampai lewat
+        if (i == count - 1 && node->i_size % BLOCK_SIZE != 0) {
+            read_blocks(&last, block, 1);
+            memcpy(data + i * BLOCK_SIZE, last.buf, node->i_size % BLOCK_SIZE);
+        } else {
+            read_blocks(data + i * BLOCK_SIZE, block, 1);
+        }
+    }
 }
 
 void deallocate_blocks(void *loc, uint32_t blocks) {
-    (void) loc;
-    (void) blocks;
+    uint32_t *ptrs = (uint32_t *) loc; // = node->i_block
+    struct BlockBuffer bitmap;
+    uint32_t last_bgd = GROUPS_COUNT;  // belum ada bitmap yang di-load
+
+    uint32_t direct = blocks < DIRECT_BLOCKS ? blocks : DIRECT_BLOCKS;
+    deallocate_block(ptrs, direct, &bitmap, 0, &last_bgd, false);
+    blocks -= direct;
+
+    if (blocks > 0) {
+        uint32_t single = blocks < PTRS_PER_BLOCK ? blocks : PTRS_PER_BLOCK;
+        deallocate_block(&ptrs[12], single, &bitmap, 1, &last_bgd, true);
+        blocks -= single;
+    }
+
+    if (blocks > 0)
+        deallocate_block(&ptrs[13], blocks, &bitmap, 2, &last_bgd, true);
+
+    // bitmap group terakhir masih di buffer, simpan ke disk
+    if (last_bgd < GROUPS_COUNT)
+        write_blocks(&bitmap, bgd_table.table[last_bgd].bg_block_bitmap, 1);
 }
 
+/* depth 0: locations[0..blocks-1] adalah block data
+ * depth 1: locations[0] adalah block single indirect yang menunjuk blocks block data
+ * depth 2: locations[0] adalah block doubly indirect yang (lewat indirect) menunjuk blocks block data */
 uint32_t deallocate_block(uint32_t *locations, uint32_t blocks, struct BlockBuffer *bitmap, uint32_t depth, uint32_t *last_bgd, bool bgd_loaded) {
-    (void) locations;
-    (void) blocks;
-    (void) bitmap;
-    (void) depth;
-    (void) bgd_loaded;
+    (void) bgd_loaded; // tidak dipakai, status bitmap sudah ditandai lewat last_bgd == GROUPS_COUNT
+
+    if (depth == 0) {
+        for (uint32_t i = 0; i < blocks; i++)
+            free_block_cached(locations[i], bitmap, last_bgd);
+        return *last_bgd;
+    }
+
+    uint32_t ptrs[PTRS_PER_BLOCK];
+    read_blocks(ptrs, locations[0], 1);
+
+    if (depth == 1) {
+        deallocate_block(ptrs, blocks, bitmap, 0, last_bgd, true);
+    } else {
+        for (uint32_t k = 0; blocks > 0; k++) {
+            uint32_t count = blocks < PTRS_PER_BLOCK ? blocks : PTRS_PER_BLOCK;
+            deallocate_block(&ptrs[k], count, bitmap, 1, last_bgd, true);
+            blocks -= count;
+        }
+    }
+
+    // terakhir, bebaskan block pointer itu sendiri
+    free_block_cached(locations[0], bitmap, last_bgd);
     return *last_bgd;
 }
 
 bool rewrite_node_data(uint32_t inode, struct EXT2Inode *node, void *buf, uint32_t new_size) {
-    (void) inode;
-    (void) node;
-    (void) buf;
-    (void) new_size;
-    return false;
+    // block lama nanti dibebaskan, jadi boleh dihitung sebagai ruang kosong
+    uint32_t old_total = blocks_needed(node->i_size);
+    if (blocks_needed(new_size) > superblock.s_free_blocks_count + old_total)
+        return false;
+
+    deallocate_blocks(node->i_block, node->i_blocks);
+    node->i_size = new_size;
+    allocate_node_blocks(buf, node, inode_to_bgd(inode));
+    sync_node(node, inode);
+    return true;
 }
 
 
