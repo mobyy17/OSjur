@@ -500,75 +500,196 @@ bool rewrite_node_data(uint32_t inode, struct EXT2Inode *node, void *buf, uint32
  * SECTION 3 - RAPIP: layer directory + read
  * ========================================================================== */
 
+#define DIR_MAX_SIZE (DIR_MAX_BLOCKS * BLOCK_SIZE) // 8 KiB, ukuran buffer directory di stack
+#define ENTRY_HEADER sizeof(struct EXT2DirectoryEntry) // 9 byte, nama langsung setelahnya
+
 char *get_entry_name(void *entry) {
-    (void) entry;
-    return NULL;
+    return (char *) entry + ENTRY_HEADER;
 }
 
 struct EXT2DirectoryEntry *get_directory_entry(void *ptr, uint32_t offset) {
-    (void) ptr;
-    (void) offset;
-    return NULL;
+    return (struct EXT2DirectoryEntry *) ((uint8_t *) ptr + offset);
 }
 
 struct EXT2DirectoryEntry *get_next_directory_entry(struct EXT2DirectoryEntry *entry) {
-    (void) entry;
-    return NULL;
+    return (struct EXT2DirectoryEntry *) ((uint8_t *) entry + entry->rec_len);
 }
 
 uint16_t get_entry_record_len(uint8_t name_len) {
-    (void) name_len;
-    return 0;
+    uint16_t len = ENTRY_HEADER + name_len;
+    return (len + 3) / 4 * 4; // bulatkan ke kelipatan 4
 }
 
 uint32_t get_dir_first_child_offset(void *ptr) {
-    (void) ptr;
-    return 0;
+    // lewati entry "." dan ".."
+    struct EXT2DirectoryEntry *self = get_directory_entry(ptr, 0);
+    return self->rec_len + get_next_directory_entry(self)->rec_len;
+}
+
+/* Kalau di offset ini tidak ada entry (sisa block kosong, rec_len 0),
+ * lompat ke awal block berikutnya. Return dir_size kalau sudah habis. */
+static uint32_t skip_empty(void *dir, uint32_t dir_size, uint32_t offset) {
+    while (offset < dir_size) {
+        uint32_t left = BLOCK_SIZE - offset % BLOCK_SIZE;
+        if (left >= ENTRY_HEADER && get_directory_entry(dir, offset)->rec_len != 0)
+            break;
+        offset += left;
+    }
+    return offset;
+}
+
+/* Jumlah byte yang sudah terisi entry di block yang dimulai dari block_start */
+static uint32_t block_used(void *dir, uint32_t block_start) {
+    uint32_t used = 0;
+    while (BLOCK_SIZE - used >= ENTRY_HEADER) {
+        uint16_t rec_len = get_directory_entry(dir, block_start + used)->rec_len;
+        if (rec_len == 0)
+            break;
+        used += rec_len;
+    }
+    return used;
 }
 
 int32_t dir_find(void *dir, uint32_t dir_size, const char *name, uint8_t name_len) {
-    (void) dir;
-    (void) dir_size;
-    (void) name;
-    (void) name_len;
+    uint32_t offset = skip_empty(dir, dir_size, 0);
+    while (offset < dir_size) {
+        struct EXT2DirectoryEntry *entry = get_directory_entry(dir, offset);
+        if (entry->name_len == name_len && memcmp(get_entry_name(entry), name, name_len) == 0)
+            return offset;
+        offset = skip_empty(dir, dir_size, offset + entry->rec_len);
+    }
     return -1;
 }
 
 bool dir_add_entry(void *dir, uint32_t *dir_size, uint32_t inode, const char *name, uint8_t name_len, uint8_t file_type) {
-    (void) dir;
-    (void) dir_size;
-    (void) inode;
-    (void) name;
-    (void) name_len;
-    (void) file_type;
-    return false;
+    uint16_t need = get_entry_record_len(name_len);
+    uint32_t offset = *dir_size; // default: block baru di ujung
+
+    // cari block yang sisa ruangnya cukup
+    for (uint32_t start = 0; start < *dir_size; start += BLOCK_SIZE) {
+        uint32_t used = block_used(dir, start);
+        if (BLOCK_SIZE - used >= need) {
+            offset = start + used;
+            break;
+        }
+    }
+
+    if (offset == *dir_size) {
+        if (*dir_size >= DIR_MAX_SIZE)
+            return false; // directory sudah 16 block
+        memset((uint8_t *) dir + *dir_size, 0, BLOCK_SIZE);
+        *dir_size += BLOCK_SIZE;
+    }
+
+    struct EXT2DirectoryEntry *entry = get_directory_entry(dir, offset);
+    memset(entry, 0, need);
+    entry->inode     = inode;
+    entry->rec_len   = need;
+    entry->name_len  = name_len;
+    entry->file_type = file_type;
+    memcpy(get_entry_name(entry), name, name_len);
+    return true;
 }
 
 void dir_remove_entry(void *dir, uint32_t dir_size, uint32_t offset) {
-    (void) dir;
-    (void) dir_size;
-    (void) offset;
+    // "." dan ".." tidak boleh dihapus
+    if (offset < get_dir_first_child_offset(dir) || offset >= dir_size)
+        return;
+
+    uint32_t block_start = offset / BLOCK_SIZE * BLOCK_SIZE;
+    uint32_t end         = block_start + block_used(dir, block_start);
+    uint16_t rec_len     = get_directory_entry(dir, offset)->rec_len;
+
+    // geser entry sesudahnya ke kiri, lalu nolkan ekornya supaya tidak ada lubang
+    uint8_t *p = (uint8_t *) dir;
+    memmove(p + offset, p + offset + rec_len, end - (offset + rec_len));
+    memset(p + end - rec_len, 0, rec_len);
 }
 
 void init_directory_table(struct EXT2Inode *node, uint32_t inode, uint32_t parent_inode) {
-    (void) node;
-    (void) inode;
-    (void) parent_inode;
+    uint8_t table[BLOCK_SIZE];
+    uint32_t size = 0;
+
+    dir_add_entry(table, &size, inode, ".", 1, EXT2_FT_DIR);
+    dir_add_entry(table, &size, parent_inode, "..", 2, EXT2_FT_DIR);
+
+    node->i_mode = EXT2_S_IFDIR;
+    node->i_size = size; // 512, satu block
+    allocate_node_blocks(table, node, inode_to_bgd(inode));
+}
+
+/* Baca isi directory table milik inode ke buf (minimal DIR_MAX_SIZE byte) */
+static bool read_dir_table(uint32_t inode, void *buf, uint32_t *size) {
+    struct EXT2Inode node;
+    read_inode(inode, &node);
+    if (node.i_size > DIR_MAX_SIZE)
+        return false;
+    read_node_data(&node, buf);
+    *size = node.i_size;
+    return true;
 }
 
 bool is_directory_empty(uint32_t inode) {
-    (void) inode;
-    return false;
+    uint8_t table[DIR_MAX_SIZE];
+    uint32_t size;
+    if (!read_dir_table(inode, table, &size))
+        return false;
+
+    // kosong = tidak ada entry lagi setelah "." dan ".."
+    return skip_empty(table, size, get_dir_first_child_offset(table)) >= size;
 }
 
 int8_t read(struct EXT2DriverRequest request) {
-    (void) request;
-    return -1;
+    if (!is_directory_inode(request.parent_inode))
+        return 4;
+
+    uint8_t table[DIR_MAX_SIZE];
+    uint32_t size;
+    if (!read_dir_table(request.parent_inode, table, &size))
+        return -1;
+
+    int32_t offset = dir_find(table, size, request.name, request.name_len);
+    if (offset < 0)
+        return 3;
+
+    struct EXT2DirectoryEntry *entry = get_directory_entry(table, offset);
+    if (entry->file_type == EXT2_FT_DIR)
+        return 1;
+
+    struct EXT2Inode node;
+    read_inode(entry->inode, &node);
+    if (request.buffer_size < node.i_size)
+        return 2;
+
+    read_node_data(&node, request.buf);
+    return 0;
 }
 
 int8_t read_directory(struct EXT2DriverRequest *prequest) {
-    (void) prequest;
-    return -1;
+    if (!is_directory_inode(prequest->parent_inode))
+        return 3;
+
+    uint8_t table[DIR_MAX_SIZE];
+    uint32_t size;
+    if (!read_dir_table(prequest->parent_inode, table, &size))
+        return -1;
+
+    int32_t offset = dir_find(table, size, prequest->name, prequest->name_len);
+    if (offset < 0)
+        return 2;
+
+    struct EXT2DirectoryEntry *entry = get_directory_entry(table, offset);
+    if (entry->file_type != EXT2_FT_DIR)
+        return 1;
+
+    struct EXT2Inode node;
+    read_inode(entry->inode, &node);
+    if (prequest->buffer_size < node.i_size)
+        return -1;
+
+    read_node_data(&node, prequest->buf);
+    prequest->buffer_size = node.i_size; // supaya pemanggil tahu panjang tabelnya
+    return 0;
 }
 
 
