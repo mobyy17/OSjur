@@ -698,11 +698,86 @@ int8_t read_directory(struct EXT2DriverRequest *prequest) {
  * ========================================================================== */
 
 int8_t write(struct EXT2DriverRequest *request) {
-    (void) request;
-    return -1;
+    if (!is_directory_inode(request->parent_inode))
+        return 2;
+
+    uint8_t table[DIR_MAX_SIZE];
+    uint32_t size;
+    if (!read_dir_table(request->parent_inode, table, &size))
+        return -1;
+
+    if (dir_find(table, size, request->name, request->name_len) >= 0)
+        return 1;
+    if (request->name_len == 0)
+        return -1;
+
+    // cek sisa disk dulu. +1 cadangan kalau daftar isi parent butuh block baru
+    uint32_t need = request->is_directory ? 1 : blocks_needed(request->buffer_size);
+    if (superblock.s_free_inodes_count == 0 || need + 1 > superblock.s_free_blocks_count)
+        return -1;
+
+    uint32_t inode = allocate_node();
+    struct EXT2Inode node;
+    memset(&node, 0, sizeof(node));
+    uint8_t file_type;
+
+    if (request->is_directory) {
+        init_directory_table(&node, inode, request->parent_inode);
+        file_type = EXT2_FT_DIR;
+    } else {
+        node.i_mode = EXT2_S_IFREG;
+        node.i_size = request->buffer_size;
+        allocate_node_blocks(request->buf, &node, inode_to_bgd(request->parent_inode));
+        file_type = EXT2_FT_REG_FILE;
+    }
+    sync_node(&node, inode);
+
+    // daftarkan nama baru di parent, lalu simpan daftar isi parent ke disk
+    struct EXT2Inode parent;
+    read_inode(request->parent_inode, &parent);
+    if (!dir_add_entry(table, &size, inode, request->name, request->name_len, file_type) ||
+        !rewrite_node_data(request->parent_inode, &parent, table, size)) {
+        deallocate_node(inode); // gagal, batalkan inode yang tadi dibuat
+        commit_metadata();
+        return -1;
+    }
+
+    commit_metadata();
+    return 0;
 }
 
 int8_t delete(struct EXT2DriverRequest request) {
-    (void) request;
-    return -1;
+    if (!is_directory_inode(request.parent_inode))
+        return 3;
+
+    uint8_t table[DIR_MAX_SIZE];
+    uint32_t size;
+    if (!read_dir_table(request.parent_inode, table, &size))
+        return -1;
+
+    int32_t offset = dir_find(table, size, request.name, request.name_len);
+    if (offset < 0)
+        return 1;
+    if ((uint32_t) offset < get_dir_first_child_offset(table))
+        return -1; // "." dan ".." tidak boleh dihapus
+
+    struct EXT2DirectoryEntry *entry = get_directory_entry(table, offset);
+    bool is_dir = entry->file_type == EXT2_FT_DIR;
+    if (is_dir != request.is_directory)
+        return 1; // nama ada, tapi tipenya beda dengan yang diminta
+
+    uint32_t inode = entry->inode;
+    if (is_dir && !is_directory_empty(inode))
+        return 2;
+
+    deallocate_node(inode);
+
+    // hapus nama dari daftar isi parent, lalu simpan ke disk
+    struct EXT2Inode parent;
+    read_inode(request.parent_inode, &parent);
+    dir_remove_entry(table, size, offset);
+    rewrite_node_data(request.parent_inode, &parent, table, size);
+
+    commit_metadata();
+    return 0;
 }
