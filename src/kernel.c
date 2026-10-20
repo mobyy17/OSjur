@@ -94,12 +94,14 @@ void kernel_setup(void) {
             struct EXT2DirectoryEntry *entry = get_directory_entry(table, offset);
             if (entry->rec_len == 0)
                 break; // root kecil, cukup satu block
-            char name[64];
-            uint8_t len = entry->name_len < 60 ? entry->name_len : 60;
-            for (int i = 0; i < len; i++) name[i] = get_entry_name(entry)[i];
-            name[len] = (entry->file_type == EXT2_FT_DIR) ? '/' : 0;
-            name[len + 1] = 0;
-            print(name, entry->file_type == EXT2_FT_DIR ? 0x9 : 0xF);
+            if (entry->inode != 0) { // inode 0 = slot kosong
+                char name[64];
+                uint8_t len = entry->name_len < 60 ? entry->name_len : 60;
+                for (int i = 0; i < len; i++) name[i] = get_entry_name(entry)[i];
+                name[len] = (entry->file_type == EXT2_FT_DIR) ? '/' : 0;
+                name[len + 1] = 0;
+                print(name, entry->file_type == EXT2_FT_DIR ? 0x9 : 0xF);
+            }
             offset += entry->rec_len;
         }
     }

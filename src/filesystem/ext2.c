@@ -14,12 +14,13 @@
  * buat static dan taruh di section sendiri juga.
  */
 
+/* Signature disamakan dengan kit supaya sample-image.bin yang terbaru dikenali dan tidak diformat ulang oleh create_ext2() (Book 2.6.4). */
 const uint8_t fs_signature[BLOCK_SIZE] = {
-    'O', 'S', 'j', 'u', 'r', ' ', '-', ' ', 'I', 'F', '2', '1', '3', '0', ' ',  ' ',
-    'L', 'e', 'w', 'i', ' ', 'R', 'a', 'f', 'i', ' ', ' ', ' ', ' ', ' ', ' ',  ' ',
-    'R', 'a', 'p', 'i', 'p', ' ', 'D', 'i', 'a', 'n', 'd', 'r', 'a', ' ', ' ',  ' ',
+    'C', 'o', 'u', 'r', 's', 'e', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',  ' ',
+    'D', 'e', 's', 'i', 'g', 'n', 'e', 'd', ' ', 'b', 'y', ' ', ' ', ' ', ' ',  ' ',
+    'L', 'a', 'b', ' ', 'S', 'i', 's', 't', 'e', 'r', ' ', 'I', 'T', 'B', ' ',  ' ',
     'M', 'a', 'd', 'e', ' ', 'w', 'i', 't', 'h', ' ', '<', '3', ' ', ' ', ' ',  ' ',
-    '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '2', '0', '2', '6', '\n',
+    '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '2', '0', '2', '5', '\n',
     [BLOCK_SIZE-2] = 'O',
     [BLOCK_SIZE-1] = 'k',
 };
@@ -28,11 +29,7 @@ const uint8_t fs_signature[BLOCK_SIZE] = {
 static struct EXT2Superblock superblock;
 static struct EXT2BlockGroupDescriptorTable bgd_table;
 
-
-/* ============================================================================
- * SECTION 1 - LEWI: fondasi + layer inode
- * ========================================================================== */
-
+/* SECTION 1 - LEWI: fondasi + layer inode */
 #define INODES_COUNT      (INODES_PER_GROUP * GROUPS_COUNT)
 #define META_BLOCK_COUNT  (2 + INODES_TABLE_BLOCK_COUNT)  // block bitmap + inode bitmap + inode table
 
@@ -246,11 +243,7 @@ void initialize_filesystem_ext2(void) {
     memcpy(&bgd_table, b.buf, sizeof(bgd_table));
 }
 
-
-/* ============================================================================
- * SECTION 2 - RAFI: layer block
- * ========================================================================== */
-
+/* SECTION 2 - RAFI: layer block */
 #define DIRECT_BLOCKS   12u                              // i_block[0..11]
 #define PTRS_PER_BLOCK  (BLOCK_SIZE / sizeof(uint32_t))  // 128 pointer per block
 #define SINGLE_LIMIT    (DIRECT_BLOCKS + PTRS_PER_BLOCK) // block ke-0..139 muat tanpa doubly
@@ -495,11 +488,7 @@ bool rewrite_node_data(uint32_t inode, struct EXT2Inode *node, void *buf, uint32
     return true;
 }
 
-
-/* ============================================================================
- * SECTION 3 - RAPIP: layer directory + read
- * ========================================================================== */
-
+/* SECTION 3 - RAPIP: layer directory + read */
 #define DIR_MAX_SIZE (DIR_MAX_BLOCKS * BLOCK_SIZE) // 8 KiB, ukuran buffer directory di stack
 #define ENTRY_HEADER sizeof(struct EXT2DirectoryEntry) // 9 byte, nama langsung setelahnya
 
@@ -526,26 +515,37 @@ uint32_t get_dir_first_child_offset(void *ptr) {
     return self->rec_len + get_next_directory_entry(self)->rec_len;
 }
 
-/* Kalau di offset ini tidak ada entry (sisa block kosong, rec_len 0),
- * lompat ke awal block berikutnya. Return dir_size kalau sudah habis. */
+/* Lewati posisi yang bukan entry aktif, return dir_size kalau sudah habis:
+ * - sisa block kosong (rec_len 0): lompat ke awal block berikutnya
+ * - entry inode 0 (slot kosong): lompat sejauh rec_len. Reference implementation (sample-image.bin) menutup sisa block dengan entry seperti ini. */
 static uint32_t skip_empty(void *dir, uint32_t dir_size, uint32_t offset) {
     while (offset < dir_size) {
         uint32_t left = BLOCK_SIZE - offset % BLOCK_SIZE;
-        if (left >= ENTRY_HEADER && get_directory_entry(dir, offset)->rec_len != 0)
+        if (left < ENTRY_HEADER) {
+            offset += left;
+            continue;
+        }
+        struct EXT2DirectoryEntry *entry = get_directory_entry(dir, offset);
+        if (entry->rec_len == 0)
+            offset += left;
+        else if (entry->inode == 0)
+            offset += entry->rec_len;
+        else
             break;
-        offset += left;
     }
     return offset;
 }
 
-/* Jumlah byte yang sudah terisi entry di block yang dimulai dari block_start */
+/* Jumlah byte terpakai di block yang dimulai dari block_start, dihitung sampai ujung entry aktif (inode != 0) terakhir. Slot inode 0 di belakangnya dianggap ruang kosong. */
 static uint32_t block_used(void *dir, uint32_t block_start) {
-    uint32_t used = 0;
-    while (BLOCK_SIZE - used >= ENTRY_HEADER) {
-        uint16_t rec_len = get_directory_entry(dir, block_start + used)->rec_len;
-        if (rec_len == 0)
+    uint32_t pos = 0, used = 0;
+    while (pos + ENTRY_HEADER <= BLOCK_SIZE) {
+        struct EXT2DirectoryEntry *entry = get_directory_entry(dir, block_start + pos);
+        if (entry->rec_len == 0)
             break;
-        used += rec_len;
+        pos += entry->rec_len;
+        if (entry->inode != 0)
+            used = pos;
     }
     return used;
 }
@@ -570,6 +570,8 @@ bool dir_add_entry(void *dir, uint32_t *dir_size, uint32_t inode, const char *na
         uint32_t used = block_used(dir, start);
         if (BLOCK_SIZE - used >= need) {
             offset = start + used;
+            // buang sisa slot kosong di belakang
+            memset((uint8_t *) dir + offset, 0, BLOCK_SIZE - used);
             break;
         }
     }
@@ -600,10 +602,10 @@ void dir_remove_entry(void *dir, uint32_t dir_size, uint32_t offset) {
     uint32_t end         = block_start + block_used(dir, block_start);
     uint16_t rec_len     = get_directory_entry(dir, offset)->rec_len;
 
-    // geser entry sesudahnya ke kiri, lalu nolkan ekornya supaya tidak ada lubang
+    // geser entry sesudahnya ke kiri, lalu nolkan sisa block supaya tidak ada lubang
     uint8_t *p = (uint8_t *) dir;
     memmove(p + offset, p + offset + rec_len, end - (offset + rec_len));
-    memset(p + end - rec_len, 0, rec_len);
+    memset(p + end - rec_len, 0, block_start + BLOCK_SIZE - (end - rec_len));
 }
 
 void init_directory_table(struct EXT2Inode *node, uint32_t inode, uint32_t parent_inode) {
@@ -693,9 +695,7 @@ int8_t read_directory(struct EXT2DriverRequest *prequest) {
 }
 
 
-/* ============================================================================
- * SECTION 4 - DIANDRA: write + delete
- * ========================================================================== */
+/* SECTION 4 - DIANDRA: write + delete */
 
 int8_t write(struct EXT2DriverRequest *request) {
     if (!is_directory_inode(request->parent_inode))
