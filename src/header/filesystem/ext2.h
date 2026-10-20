@@ -404,7 +404,7 @@ void sync_node(struct EXT2Inode *node, uint32_t inode);
  * - Nomor inode mulai dari 1, root = inode 1. 0 artinya "tidak ada".
  * - i_mode folder = EXT2_S_IFDIR, file = EXT2_S_IFREG.
  * - i_blocks = jumlah block DATA saja (block pointer indirect tidak dihitung).
- * - Superblock (46 byte) dan BGD table (256 byte) lebih kecil dari 1 block.
+ * - Superblock (44 byte) dan BGD table (256 byte) lebih kecil dari 1 block.
  *   read_blocks selalu menulis 512 byte, jadi baca/tulis metadata
  *   SELALU lewat struct BlockBuffer lalu memcpy, jangan langsung ke struct.
  * - allocate_node() dan deallocate_node() langsung menulis inode bitmap ke disk,

@@ -22,10 +22,20 @@ const char keyboard_scancode_1_to_ascii_map[256] = {
       0,    0,   0,   0,   0,   0,   0,   0,    0,   0,   0,    0,    0,   0,    0,    0,
 };
 
+/* Posisi sama persis dengan map di atas. Index setelah 0x4F otomatis bernilai 0. */
+const char keyboard_scancode_1_to_ascii_shift_map[256] = {
+      0, 0x1B, '!', '@', '#', '$', '%', '^',  '&', '*', '(',  ')',  '_', '+', '\b', '\t',
+    'Q',  'W', 'E', 'R', 'T', 'Y', 'U', 'I',  'O', 'P', '{',  '}', '\n',   0,  'A',  'S',
+    'D',  'F', 'G', 'H', 'J', 'K', 'L', ':',  '"', '~',   0,  '|',  'Z', 'X',  'C',  'V',
+    'B',  'N', 'M', '<', '>', '?',   0, '*',    0, ' ',   0,    0,    0,   0,    0,    0,
+      0,    0,   0,   0,   0,   0,   0,   0,    0,   0, '-',    0,    0,   0,  '+',    0,
+};
+
 static volatile struct KeyboardDriverState keyboard_state = {
     .read_extended_mode = false,
     .keyboard_input_on  = false,
     .ctrl_pressed       = false,
+    .shift_pressed      = false,
     .ctrl_c_pending     = false,
     .keyboard_buffer    = 0,
 };
@@ -41,10 +51,6 @@ void keyboard_state_deactivate(void) {
 void get_keyboard_buffer(char *buf) {
     *buf = keyboard_state.keyboard_buffer;
     keyboard_state.keyboard_buffer = 0;
-}
-
-bool keyboard_is_ctrl_pressed(void) {
-    return keyboard_state.ctrl_pressed;
 }
 
 bool keyboard_consume_ctrl_c(void) {
@@ -65,7 +71,7 @@ static char extended_scancode_to_key(uint8_t scancode) {
 }
 
 void keyboard_isr(void) {
-    /* Wajib dibaca di setiap IRQ1, walau input sedang off, supaya buffer controller tidak penuh. */
+    // wajib dibaca tiap IRQ1 walau input off, kalau tidak buffer controller penuh
     uint8_t scancode = in(KEYBOARD_DATA_PORT);
 
     if (scancode == EXTENDED_SCANCODE_BYTE) {
@@ -76,30 +82,36 @@ void keyboard_isr(void) {
 
     bool extended = keyboard_state.read_extended_mode;
     keyboard_state.read_extended_mode = false;
-    /* Modifier selalu dilacak walau input off. Kalau tidak, Ctrl yang dilepas saat input off akan dianggap masih ditahan setelah input on lagi. */
+
+    // Ctrl dan Shift tetap dilacak walau input off, supaya statusnya tidak nyangkut
     if (scancode == SCANCODE_CTRL_PRESS) {
-        keyboard_state.ctrl_pressed = true; /* 0x1D = Ctrl kiri, 0xE0 0x1D = Ctrl kanan */
+        keyboard_state.ctrl_pressed = true;  // 0x1D = Ctrl kiri, 0xE0 0x1D = Ctrl kanan
     } else if (scancode == SCANCODE_CTRL_RELEASE) {
         keyboard_state.ctrl_pressed = false;
+    } else if (!extended && (scancode == SCANCODE_LSHIFT_PRESS || scancode == SCANCODE_RSHIFT_PRESS)) {
+        keyboard_state.shift_pressed = true;
+    } else if (!extended && (scancode == SCANCODE_LSHIFT_RELEASE || scancode == SCANCODE_RSHIFT_RELEASE)) {
+        keyboard_state.shift_pressed = false;
     } else if (keyboard_state.keyboard_input_on && !(scancode & KEYBOARD_BREAK_BIT)) {
         char key = 0;
         if (extended) {
             key = extended_scancode_to_key(scancode);
         } else if (keyboard_state.ctrl_pressed) {
-            /* Hanya Ctrl+C yang diteruskan. Kombinasi Ctrl lain dibuang supaya tidak bentrok dengan KEY_ARROW_* (0x11-0x14 = Ctrl+Q/R/S/T). */
+            // cuma Ctrl+C yang dipakai, kombinasi Ctrl lain dibuang
             if (scancode == SCANCODE_C_PRESS) {
                 key = KEY_CTRL_C;
                 keyboard_state.ctrl_c_pending = true;
             }
+        } else if (keyboard_state.shift_pressed) {
+            key = keyboard_scancode_1_to_ascii_shift_map[scancode];
         } else {
             key = keyboard_scancode_1_to_ascii_map[scancode];
         }
 
-        if (key != 0) {
+        if (key != 0)
             keyboard_state.keyboard_buffer = key;
-        }
     }
 
-    /* Tanpa ACK, semua IRQ berikutnya tertahan di PIC. */
+    // tanpa ACK, IRQ berikutnya tertahan di PIC
     pic_ack(IRQ_KEYBOARD);
 }

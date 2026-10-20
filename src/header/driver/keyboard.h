@@ -12,6 +12,10 @@
 #define EXT_SCANCODE_RIGHT     0x4D
 #define SCANCODE_CTRL_PRESS    0x1D
 #define SCANCODE_CTRL_RELEASE  0x9D
+#define SCANCODE_LSHIFT_PRESS   0x2A
+#define SCANCODE_LSHIFT_RELEASE 0xAA
+#define SCANCODE_RSHIFT_PRESS   0x36
+#define SCANCODE_RSHIFT_RELEASE 0xB6
 #define SCANCODE_C_PRESS       0x2E
 
 #define KEYBOARD_DATA_PORT     0x60
@@ -32,18 +36,25 @@
 extern const char keyboard_scancode_1_to_ascii_map[256];
 
 /**
+ * Sama seperti map di atas, tapi untuk tombol yang ditekan sambil menahan Shift (huruf besar dan simbol seperti | _ " : yang nanti dibutuhkan shell).
+ */
+extern const char keyboard_scancode_1_to_ascii_shift_map[256];
+
+/**
  * KeyboardDriverState - Contain all driver states
  *
  * @param read_extended_mode Signaling next read is extended scancode (setelah 0xE0, ex. arrow keys)
  * @param keyboard_input_on  Indicate whether keyboard ISR is activated or not
  * @param ctrl_pressed       Status tombol Ctrl kiri atau kanan sedang ditahan
- * @param ctrl_c_pending     Sticky flag Ctrl+C dengan kondisi bertahan sampai dikonsumsi walau buffer tertimpa
+ * @param shift_pressed      Status tombol Shift kiri atau kanan sedang ditahan
+ * @param ctrl_c_pending     Flag Ctrl+C, tetap true sampai dibaca lewat keyboard_consume_ctrl_c()
  * @param keyboard_buffer    Storing keyboard input values in ASCII (atau KEY_* di atas)
  */
 struct KeyboardDriverState {
     bool read_extended_mode;
     bool keyboard_input_on;
     bool ctrl_pressed;
+    bool shift_pressed;
     bool ctrl_c_pending;
     char keyboard_buffer;
 } __attribute((packed));
@@ -56,7 +67,7 @@ void keyboard_state_activate(void);
 
 /**
  * Mematikan pembacaan input keyboard.
- * ISR tetap membaca scancode, melacak status modifier, dan mengirim ACK, tapi tidak menyimpan karakter.
+ * ISR tetap membaca scancode, melacak status Ctrl/Shift, dan mengirim ACK, tapi tidak menyimpan karakter.
  */
 void keyboard_state_deactivate(void);
 
@@ -67,17 +78,15 @@ void keyboard_state_deactivate(void);
 void get_keyboard_buffer(char *buf);
 
 /**
- * @return true kalau Ctrl (kiri atau kanan) sedang ditahan
+ * Cek dan reset flag Ctrl+C.
+ * @return true kalau Ctrl+C ditekan sejak terakhir kali fungsi ini dipanggil
  */
-bool keyboard_is_ctrl_pressed(void);
-
-/* Cek dan konsumsi Ctrl+C. Mengembalikan true sekali untuk setiap Ctrl+C yang ditekan selama input on lalu flag direset. Dipakai program yang tidak membaca buffer setiap saat supaya Ctrl+C tidak hilang tertimpa tombol lain.  */
 bool keyboard_consume_ctrl_c(void);
 
 /**
  * Handling keyboard interrupt & process scancodes into ASCII character.
- * Dipanggil main_interrupt_handler() untuk IRQ1. Selalu membaca 1 scancode dari KEYBOARD_DATA_PORT dan selalu mengirim pic_ack(), baik input sedang on maupun off.
- * Status modifier (Ctrl) dan prefix 0xE0 selalu dilacak serta karakter hanya disimpan ke buffer kalau keyboard_input_on bernilai true.
+ * Dipanggil main_interrupt_handler() untuk IRQ1. Selalu membaca 1 scancode dari KEYBOARD_DATA_PORT
+ * dan selalu mengirim pic_ack(), baik input sedang on maupun off.
  */
 void keyboard_isr(void);
 
