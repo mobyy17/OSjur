@@ -56,3 +56,11 @@ iso: kernel
 	@genisoimage -R -b boot/grub/grub1 -no-emul-boot -boot-load-size 4 -A os -input-charset utf8 -quiet -boot-info-table -o $(OUTPUT_FOLDER)/$(ISO_NAME).iso $(OUTPUT_FOLDER)/iso
 	@echo Generated iso file...
 	@rm -r $(OUTPUT_FOLDER)/iso/
+
+inserter:
+	@$(CC) -Wno-builtin-declaration-mismatch -g -I$(SOURCE_FOLDER) \
+		$(SOURCE_FOLDER)/stdlib/string.c \
+		$(SOURCE_FOLDER)/filesystem/ext2.c \
+		$(SOURCE_FOLDER)/external/external-inserter.c \
+		-o $(OUTPUT_FOLDER)/inserter
+	@echo Inserter ready: $(OUTPUT_FOLDER)/inserter
