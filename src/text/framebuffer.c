@@ -30,3 +30,41 @@ void framebuffer_clear(void) {
         }
     }
 }
+
+// Posisi cursor untuk framebuffer_putchar(), dipakai output dari syscall
+static uint8_t cursor_row = 0;
+static uint8_t cursor_col = 0;
+
+void framebuffer_putchar(char c, uint8_t color) {
+    if (c == '\n') {
+        cursor_col = 0;
+        cursor_row++;
+    } else if (c == '\b') {
+        if (cursor_col > 0) {
+            cursor_col--;
+            framebuffer_write(cursor_row, cursor_col, 0x00, 0x7, 0x0);
+        }
+    } else if (c >= ' ') {
+        framebuffer_write(cursor_row, cursor_col, c, color, 0x0);
+        cursor_col++;
+        if (cursor_col >= FRAMEBUFFER_WIDTH) {
+            cursor_col = 0;
+            cursor_row++;
+        }
+    }
+
+    // Layar penuh: geser semua baris naik satu, kosongkan baris terakhir
+    if (cursor_row >= FRAMEBUFFER_HEIGHT) {
+        memmove(FRAMEBUFFER_MEMORY_OFFSET, FRAMEBUFFER_MEMORY_OFFSET + FRAMEBUFFER_WIDTH * 2,
+                (FRAMEBUFFER_HEIGHT - 1) * FRAMEBUFFER_WIDTH * 2);
+        for (uint8_t col = 0; col < FRAMEBUFFER_WIDTH; col++)
+            framebuffer_write(FRAMEBUFFER_HEIGHT - 1, col, 0x00, 0x7, 0x0);
+        cursor_row = FRAMEBUFFER_HEIGHT - 1;
+    }
+    framebuffer_set_cursor(cursor_row, cursor_col);
+}
+
+void framebuffer_puts(const char *str, uint32_t count, uint8_t color) {
+    for (uint32_t i = 0; i < count; i++)
+        framebuffer_putchar(str[i], color);
+}

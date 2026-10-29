@@ -48,4 +48,23 @@ void framebuffer_set_cursor(uint8_t r, uint8_t c);
  */
 void framebuffer_clear(void);
 
+/**
+ * Tulis satu karakter di posisi cursor lalu geser cursor (dipakai syscall putchar).
+ * '\n' pindah baris, '\b' hapus satu karakter ke kiri, karakter kontrol lain diabaikan.
+ * Kalau sudah di baris terakhir, layar di-scroll naik satu baris.
+ *
+ * @param c     Character
+ * @param color Warna karakter (foreground), background hitam
+ */
+void framebuffer_putchar(char c, uint8_t color);
+
+/**
+ * Tulis count karakter dari str dengan framebuffer_putchar() (dipakai syscall puts).
+ *
+ * @param str   Pointer ke buffer karakter
+ * @param count Jumlah karakter yang ditulis
+ * @param color Warna karakter (foreground), background hitam
+ */
+void framebuffer_puts(const char *str, uint32_t count, uint8_t color);
+
 #endif
