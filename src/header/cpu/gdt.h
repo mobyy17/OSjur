@@ -11,6 +11,9 @@
 */ 
 #define GDT_KERNEL_CODE_SEGMENT_SELECTOR 0x8
 #define GDT_KERNEL_DATA_SEGMENT_SELECTOR 0x10
+#define GDT_USER_CODE_SEGMENT_SELECTOR   0x18
+#define GDT_USER_DATA_SEGMENT_SELECTOR   0x20
+#define GDT_TSS_SELECTOR                 0x28
 
 extern struct GDTR _gdt_gdtr;
 
@@ -77,5 +80,11 @@ struct GDTR {
  * @param gdtr Pointer to GDTR structure
  */
 void load_gdt(struct GDTR *gdtr);
+
+/**
+ * Isi base address descriptor TSS (GDT index 5) dengan alamat _interrupt_tss_entry.
+ * Dipanggil sekali sebelum set_tss_register().
+ */
+void gdt_install_tss(void);
 
 #endif
