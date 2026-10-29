@@ -37,6 +37,9 @@
 #define ICW4_SFNM            0x10   /* Special fully nested (not) */
 
 
+// Interrupt number untuk system call dari user mode
+#define SYSCALL_INT_NUMBER   0x30
+
 /* -- PICs IRQ list -- */
 
 // PIC Master
@@ -126,6 +129,38 @@ struct InterruptFrame {
 } __attribute__((packed));
 
 
+
+extern struct TSSEntry _interrupt_tss_entry;
+
+/**
+ * TSSEntry, Task State Segment. Used when jumping back to ring 0 / kernel
+ * Refer to Intel x86 Vol 3a: 8.2.1 Task-State Segment (TSS)
+ *
+ * @param prev_tss        Previous TSS
+ * @param esp0            Stack pointer to load when changing to kernel mode
+ * @param ss0             Stack segment to load when changing to kernel mode
+ * @param unused_register Sisa field TSS yang tidak dipakai (software context switch)
+ */
+struct TSSEntry {
+    uint32_t prev_tss;
+    uint32_t esp0;
+    uint32_t ss0;
+    uint32_t unused_register[23];
+} __attribute__((packed));
+
+/**
+ * Set TSS esp0 ke stack kernel milik fungsi pemanggil.
+ * Dipanggil tepat sebelum kernel_execute_user_program().
+ */
+void set_tss_kernel_current_stack(void);
+
+/**
+ * Handler system call (int 0x30). Service dipilih dari eax, parameter dari ebx, ecx, edx.
+ * Return code service FS ditulis ke pointer int8_t pada ecx.
+ *
+ * @param frame Information about CPU during interrupt is raised
+ */
+void syscall(struct InterruptFrame frame);
 
 // Activate PIC mask for keyboard only
 void activate_keyboard_interrupt(void);

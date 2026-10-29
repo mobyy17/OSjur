@@ -1,6 +1,21 @@
 #include "header/cpu/interrupt.h"
 #include "header/cpu/portio.h"
+#include "header/cpu/gdt.h"
 #include "header/driver/keyboard.h"
+#include "header/filesystem/ext2.h"
+#include "header/text/framebuffer.h"
+
+struct TSSEntry _interrupt_tss_entry = {
+    .ss0 = GDT_KERNEL_DATA_SEGMENT_SELECTOR,
+};
+
+void set_tss_kernel_current_stack(void) {
+    uint32_t stack_ptr;
+    // Reading base stack frame instead esp
+    __asm__ volatile ("mov %%ebp, %0": "=r"(stack_ptr) : /* <Empty> */);
+    // Add 8 because 4 for ret address and other 4 is for stack_ptr variable
+    _interrupt_tss_entry.esp0 = stack_ptr + 8;
+}
 
 void io_wait(void) {
     out(0x80, 0);
@@ -45,6 +60,42 @@ void main_interrupt_handler(struct InterruptFrame frame) {
     switch (frame.int_number) {
         case PIC1_OFFSET + IRQ_KEYBOARD:
             keyboard_isr();
+            break;
+        case SYSCALL_INT_NUMBER:
+            syscall(frame);
+            break;
+    }
+}
+
+void syscall(struct InterruptFrame frame) {
+    uint32_t ebx = frame.cpu.general.ebx;
+    uint32_t ecx = frame.cpu.general.ecx;
+    uint32_t edx = frame.cpu.general.edx;
+
+    switch (frame.cpu.general.eax) {
+        case 0: // read(request), ebx = pointer request, ecx = pointer return code
+            *((int8_t*) ecx) = read(*(struct EXT2DriverRequest*) ebx);
+            break;
+        case 1: // read_directory(request)
+            *((int8_t*) ecx) = read_directory((struct EXT2DriverRequest*) ebx);
+            break;
+        case 2: // write(request)
+            *((int8_t*) ecx) = write((struct EXT2DriverRequest*) ebx);
+            break;
+        case 3: // delete(request)
+            *((int8_t*) ecx) = delete(*(struct EXT2DriverRequest*) ebx);
+            break;
+        case 4: // getchar, ebx = pointer char (0 kalau belum ada input)
+            get_keyboard_buffer((char*) ebx);
+            break;
+        case 5: // putchar, ebx = karakter, ecx = warna
+            framebuffer_putchar((char) ebx, (uint8_t) ecx);
+            break;
+        case 6: // puts, ebx = pointer string, ecx = jumlah karakter, edx = warna
+            framebuffer_puts((char*) ebx, ecx, (uint8_t) edx);
+            break;
+        case 7: // aktifkan input keyboard
+            keyboard_state_activate();
             break;
     }
 }
