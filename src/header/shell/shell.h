@@ -45,6 +45,7 @@
 #define SYSCALL_PUTCHAR        5
 #define SYSCALL_PUTS           6
 #define SYSCALL_KEYBOARD_ON    7
+#define SYSCALL_MOVE           8
 
 /* State shell, didefinisikan di user-shell.c */
 extern uint32_t cwd_inode;
