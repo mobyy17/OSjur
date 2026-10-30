@@ -344,6 +344,17 @@ int8_t write(struct EXT2DriverRequest *request);
  */
 int8_t delete(struct EXT2DriverRequest request);
 
+/**
+ * Pindah atau rename file/folder. Cukup memindah directory entry, isi data tidak disalin.
+ * Folder yang dipindah ikut diperbarui entry ".."-nya.
+ *
+ * @param src parent_inode + name entry yang dipindah
+ * @param dst parent_inode + name tujuan (boleh parent sama untuk rename)
+ * @return 0 berhasil, 1 sumber tidak ditemukan, 2 nama tujuan sudah ada,
+ *         3 parent asal/tujuan invalid, -1 error lain (mis. folder ke dalam dirinya sendiri)
+ */
+int8_t move(struct EXT2DriverRequest src, struct EXT2DriverRequest dst);
+
 /* =============================== MEMORY ==========================================*/
 
 /**

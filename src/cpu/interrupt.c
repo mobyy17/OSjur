@@ -97,5 +97,8 @@ void syscall(struct InterruptFrame frame) {
         case 7: // aktifkan input keyboard
             keyboard_state_activate();
             break;
+        case 8: // move(src, dst), ebx = pointer request asal, ecx = pointer return code, edx = pointer request tujuan
+            *((int8_t*) ecx) = move(*(struct EXT2DriverRequest*) ebx, *(struct EXT2DriverRequest*) edx);
+            break;
     }
 }
