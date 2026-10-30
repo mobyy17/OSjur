@@ -781,3 +781,100 @@ int8_t delete(struct EXT2DriverRequest request) {
     commit_metadata();
     return 0;
 }
+
+/* Inode parent dari folder dir_inode, dibaca dari entry ".." (entry kedua) */
+static uint32_t parent_of(uint32_t dir_inode) {
+    uint8_t table[DIR_MAX_SIZE];
+    uint32_t size;
+    if (!read_dir_table(dir_inode, table, &size))
+        return 0;
+    return get_next_directory_entry(get_directory_entry(table, 0))->inode;
+}
+
+/* Ganti isi entry ".." milik folder dir_inode menjadi new_parent */
+static void set_parent_entry(uint32_t dir_inode, uint32_t new_parent) {
+    uint8_t table[DIR_MAX_SIZE];
+    uint32_t size;
+    if (!read_dir_table(dir_inode, table, &size))
+        return;
+    get_next_directory_entry(get_directory_entry(table, 0))->inode = new_parent;
+
+    struct EXT2Inode node;
+    read_inode(dir_inode, &node);
+    rewrite_node_data(dir_inode, &node, table, size);
+}
+
+int8_t move(struct EXT2DriverRequest src, struct EXT2DriverRequest dst) {
+    if (!is_directory_inode(src.parent_inode) || !is_directory_inode(dst.parent_inode))
+        return 3;
+    if (dst.name_len == 0)
+        return -1;
+
+    uint8_t src_table[DIR_MAX_SIZE];
+    uint32_t src_size;
+    if (!read_dir_table(src.parent_inode, src_table, &src_size))
+        return -1;
+
+    int32_t offset = dir_find(src_table, src_size, src.name, src.name_len);
+    if (offset < 0)
+        return 1;
+    if ((uint32_t) offset < get_dir_first_child_offset(src_table))
+        return -1; // "." dan ".." tidak boleh dipindah
+
+    struct EXT2DirectoryEntry *entry = get_directory_entry(src_table, offset);
+    uint32_t inode     = entry->inode;
+    uint8_t  file_type = entry->file_type;
+
+    // folder tidak boleh dipindah ke dalam dirinya sendiri atau turunannya (mv a a/b)
+    if (file_type == EXT2_FT_DIR) {
+        uint32_t cur = dst.parent_inode;
+        while (cur != 0) {
+            if (cur == inode)
+                return -1;
+            if (cur == 1)
+                break; // sudah sampai root
+            cur = parent_of(cur);
+        }
+    }
+
+    // rename di folder yang sama: cukup satu directory table
+    if (src.parent_inode == dst.parent_inode) {
+        if (dir_find(src_table, src_size, dst.name, dst.name_len) >= 0)
+            return 2;
+        dir_remove_entry(src_table, src_size, offset);
+        if (!dir_add_entry(src_table, &src_size, inode, dst.name, dst.name_len, file_type))
+            return -1;
+        struct EXT2Inode parent;
+        read_inode(src.parent_inode, &parent);
+        rewrite_node_data(src.parent_inode, &parent, src_table, src_size);
+        commit_metadata();
+        return 0;
+    }
+
+    // pindah folder: tambah dulu di tujuan, baru hapus dari asal
+    uint8_t dst_table[DIR_MAX_SIZE];
+    uint32_t dst_size;
+    if (!read_dir_table(dst.parent_inode, dst_table, &dst_size))
+        return -1;
+    if (dir_find(dst_table, dst_size, dst.name, dst.name_len) >= 0)
+        return 2;
+    if (!dir_add_entry(dst_table, &dst_size, inode, dst.name, dst.name_len, file_type))
+        return -1;
+
+    struct EXT2Inode dst_parent;
+    read_inode(dst.parent_inode, &dst_parent);
+    if (!rewrite_node_data(dst.parent_inode, &dst_parent, dst_table, dst_size))
+        return -1;
+
+    struct EXT2Inode src_parent;
+    read_inode(src.parent_inode, &src_parent);
+    dir_remove_entry(src_table, src_size, offset);
+    rewrite_node_data(src.parent_inode, &src_parent, src_table, src_size);
+
+    // folder yang dipindah harus menunjuk parent barunya lewat ".."
+    if (file_type == EXT2_FT_DIR)
+        set_parent_entry(inode, dst.parent_inode);
+
+    commit_metadata();
+    return 0;
+}
