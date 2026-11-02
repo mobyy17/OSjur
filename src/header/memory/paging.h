@@ -24,6 +24,8 @@
 #define RECURSIVE_PAGE_TABLES_VIRTUAL_ADDRESS 0xFFC00000u
 #define RECURSIVE_PAGE_DIRECTORY_INDEX 1023u
 
+#define PAGING_DIRECTORY_TABLE_MAX_COUNT 32
+
 // Maximum usable page frame. Default count: 128 MiB / 4 KiB = 32768 frames
 #define PAGE_FRAME_MAX_COUNT ((SYSTEM_MEMORY_MB << 20) / PAGE_FRAME_SIZE)
 
@@ -220,5 +222,32 @@ bool paging_allocate_user_page_frame(struct PageDirectory *page_dir, void *virtu
  * @return              Will return true if success, false otherwise
  */
 bool paging_free_user_page_frame(struct PageDirectory *page_dir, void *virtual_addr);
+
+
+/* --- Process-related Memory Management --- */
+/**
+ * Create new page directory prefilled with kernel higher half mapping (PDE 0x300 - 1022) dan recursive mapping (PDE 1023) ke dirinya sendiri
+ * 
+ * @return Pointer to page directory virtual address. Return NULL if allocation failed
+ */
+struct PageDirectory* paging_create_new_page_directory(void);
+
+/**
+ * Free page directory, frame page table user (PDE 0 - 0x2FF), dan delete all page directory entry.
+ * Frame data user TIDAK dibebaskan di sini, tetatpi dibebaskan dulu dengan paging_free_user_page_frame().
+ * Jika page_dir sedang aktif, CR3 dipindah ke page directory kernel terlebih dahulu.
+ * 
+ * @param page_dir Pointer to page directory virtual address
+ * @return         True if free operation success 
+ */
+bool paging_free_page_directory(struct PageDirectory *page_dir);
+
+/**
+ * Change active page directory (indirectly trigger TLB flush for all non-global entry)
+ * 
+ * @note                        Assuming page directories lives in kernel memory
+ * @param page_dir_virtual_addr Page directory virtual address to switch into
+ */
+void paging_use_page_directory(struct PageDirectory *page_dir_virtual_addr);
 
 #endif
