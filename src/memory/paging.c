@@ -144,3 +144,66 @@ bool paging_free_user_page_frame(struct PageDirectory *page_dir, void *virtual_a
     flush_single_tlb(virtual_addr);
     return true;
 }
+
+
+/* --- Process-related Memory Management --- */
+__attribute__((aligned(0x1000))) static struct PageDirectory page_directory_list[PAGING_DIRECTORY_TABLE_MAX_COUNT];
+
+static struct {
+    bool page_directory_used[PAGING_DIRECTORY_TABLE_MAX_COUNT];
+} page_directory_manager;
+
+struct PageDirectory* paging_create_new_page_directory(void) {
+    for (uint32_t i = 0; i < PAGING_DIRECTORY_TABLE_MAX_COUNT; i++) {
+        if (page_directory_manager.page_directory_used[i]) continue;
+        page_directory_manager.page_directory_used[i] = true;
+        struct PageDirectory *page_dir = &page_directory_list[i];
+
+        // Semua PDE higher half disalin supaya mapping kernel tambahan ikut terbawa ke process.
+        for (uint32_t pde = 0x300; pde < RECURSIVE_PAGE_DIRECTORY_INDEX; pde++)
+            page_dir->table[pde] = _paging_kernel_page_directory.table[pde];
+
+        // Recursive mapping ke dirinya sendiri dan berlaku wajib untuk paging_get_page_table()
+        // page_directory_list ada di kernel, sehingga physical = virtual - 0xC0000000
+        uint32_t page_dir_physical_addr = (uint32_t) page_dir - KERNEL_VIRTUAL_ADDRESS_BASE;
+        page_dir->table[RECURSIVE_PAGE_DIRECTORY_INDEX].flag = (struct PageDirectoryEntryFlag) {
+            .present_bit = true,
+            .write_bit   = true,
+        };
+        page_dir->table[RECURSIVE_PAGE_DIRECTORY_INDEX].page_table_base_address = page_dir_physical_addr >> 12;
+        return page_dir;
+    }
+    return NULL;
+}
+
+bool paging_free_page_directory(struct PageDirectory *page_dir) {
+    for (uint32_t i = 0; i < PAGING_DIRECTORY_TABLE_MAX_COUNT; i++) {
+        if (&page_directory_list[i] != page_dir) continue;
+        if (!page_directory_manager.page_directory_used[i]) return false;
+
+        // Page directory yang dihapus masih di CR3. Kalo dikosongkan langsung, mapping kernel ikut hilang saat kode kernel masih berjalan, sehingga hasilnya page fault.
+        if (page_dir == paging_get_current_page_directory_addr())
+            paging_use_page_directory(&_paging_kernel_page_directory);
+
+        // Bebaskan frame page table user.
+        for (uint32_t pde = 0; pde < 0x300; pde++) {
+            if (!page_dir->table[pde].flag.present_bit) continue;
+            uint32_t frame = page_dir->table[pde].page_table_base_address;
+            page_manager_state.page_frame_map[frame] = false;
+            page_manager_state.free_page_frame_count++;
+        }
+
+        memset(page_dir, 0, sizeof(struct PageDirectory));
+        page_directory_manager.page_directory_used[i] = false;
+        return true;
+    }
+    return false;
+}
+
+void paging_use_page_directory(struct PageDirectory *page_dir_virtual_addr) {
+    uint32_t physical_addr_page_dir = (uint32_t) page_dir_virtual_addr;
+    // Additional layer of check & mistake safety net
+    if ((uint32_t) page_dir_virtual_addr >= KERNEL_VIRTUAL_ADDRESS_BASE)
+        physical_addr_page_dir -= KERNEL_VIRTUAL_ADDRESS_BASE;
+    __asm__  volatile("mov %0, %%cr3" : /* <Empty> */ : "r"(physical_addr_page_dir): "memory");
+}
