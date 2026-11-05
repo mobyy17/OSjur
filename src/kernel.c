@@ -8,6 +8,7 @@
 #include "header/driver/keyboard.h"
 #include "header/filesystem/ext2.h"
 #include "header/memory/paging.h"
+#include "header/process/process.h"
 
 void kernel_setup(void) {
     load_gdt(&_gdt_gdtr);
@@ -20,13 +21,7 @@ void kernel_setup(void) {
     gdt_install_tss();
     set_tss_register();
 
-    // Allocate first 4 MiB virtual memory.
-    // Kit kita memakai page 4 KiB, jadi perlu 1024 kali alokasi: shell di 0x0 dan
-    // user stack (diset kernel_execute_user_program) di 0x400000 - 4 dua-duanya harus terpetakan.
-    for (uint32_t addr = 0; addr < 0x400000; addr += PAGE_FRAME_SIZE)
-        paging_allocate_user_page_frame(&_paging_kernel_page_directory, (void*) addr);
-
-    // Write shell into memory
+    // Shell request. Alokasi 4 MiB pertama sekarang dilakukan process_create_user_process() di page directory milik process, bukan lagi di page directory kernel.
     struct EXT2DriverRequest request = {
         .buf          = (uint8_t*) 0,
         .name         = "shell",
@@ -34,13 +29,16 @@ void kernel_setup(void) {
         .parent_inode = 1, // root directory
         .buffer_size  = 0x100000,
     };
-    if (read(request) != 0) {
-        framebuffer_puts("Gagal membaca shell, jalankan make insert-shell", 47, 0xC);
+
+    // Set TSS.esp0 for interprivilege interrupt
+    set_tss_kernel_current_stack();
+
+    // Create & execute process 0 (shell sebagai init process)
+    if (process_create_user_process(request) != PROCESS_CREATE_SUCCESS) {
+        framebuffer_puts("Gagal membuat process shell, jalankan make insert-shell", 55, 0xC);
         while (true);
     }
-
-    // Set TSS $esp pointer and jump into shell
-    set_tss_kernel_current_stack();
+    paging_use_page_directory(_process_list[0].context.page_directory_virtual_addr);
     kernel_execute_user_program((uint8_t*) 0);
 
     while (true);
