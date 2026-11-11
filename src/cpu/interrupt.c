@@ -4,6 +4,10 @@
 #include "header/driver/keyboard.h"
 #include "header/filesystem/ext2.h"
 #include "header/text/framebuffer.h"
+#include "header/driver/cmos.h"
+#include "header/memory/paging.h"
+#include "header/process/process.h"
+#include "header/scheduler/scheduler.h"
 
 struct TSSEntry _interrupt_tss_entry = {
     .ss0 = GDT_KERNEL_DATA_SEGMENT_SELECTOR,
@@ -56,8 +60,42 @@ void activate_keyboard_interrupt(void) {
     out(PIC1_DATA, in(PIC1_DATA) & ~(1 << IRQ_KEYBOARD));
 }
 
+void activate_timer_interrupt(void) {
+    __asm__ volatile("cli");
+    // Setup how often PIT fire
+    uint32_t pit_timer_counter_to_fire = PIT_TIMER_COUNTER;
+    out(PIT_COMMAND_REGISTER_PIO, PIT_COMMAND_VALUE);
+    out(PIT_CHANNEL_0_DATA_PIO, (uint8_t) (pit_timer_counter_to_fire & 0xFF));
+    out(PIT_CHANNEL_0_DATA_PIO, (uint8_t) ((pit_timer_counter_to_fire >> 8) & 0xFF));
+
+    // Activate the interrupt
+    out(PIC1_DATA, in(PIC1_DATA) & ~(1 << IRQ_TIMER));
+}
+
+/**
+ * IRQ0: simpan context process yang sedang jalan, lalu pindah ke process berikutnya.
+ * Timer selalu datang dari ring 3 (kernel berjalan dengan IF = 0), jadi frame.cpu.stack.esp
+ * sudah berisi esp milik user (disalin oleh intsetup.s). Fungsi ini tidak kembali ke intsetup.s.
+ */
+static void timer_isr(struct InterruptFrame frame) {
+    struct Context ctx = {
+        .cpu                         = frame.cpu,
+        .eip                         = frame.int_stack.eip,
+        .eflags                      = frame.int_stack.eflags,
+        .page_directory_virtual_addr = paging_get_current_page_directory_addr(),
+    };
+    scheduler_save_context_to_current_running_pcb(ctx);
+
+    // ACK wajib sebelum switch, kalau tidak IRQ0 berikutnya tidak akan pernah datang
+    pic_ack(IRQ_TIMER);
+    scheduler_switch_to_next_process();
+}
+
 void main_interrupt_handler(struct InterruptFrame frame) {
     switch (frame.int_number) {
+        case PIC1_OFFSET + IRQ_TIMER:
+            timer_isr(frame);
+            break;
         case PIC1_OFFSET + IRQ_KEYBOARD:
             keyboard_isr();
             break;
@@ -65,6 +103,17 @@ void main_interrupt_handler(struct InterruptFrame frame) {
             syscall(frame);
             break;
     }
+}
+
+/**
+ * Hapus process yang sedang berjalan lalu pindah ke process berikutnya.
+ * Process pemanggil sudah tidak ada, jadi tidak boleh return ke sana.
+ * PID 0 (shell) ditolak process_destroy(), untuk kasus itu fungsi ini kembali seperti biasa.
+ */
+static void exit_current_process(void) {
+    struct ProcessControlBlock *current = process_get_current_running_pcb_pointer();
+    if (current != NULL && process_destroy(current->metadata.pid))
+        scheduler_switch_to_next_process();
 }
 
 void syscall(struct InterruptFrame frame) {
@@ -100,5 +149,30 @@ void syscall(struct InterruptFrame frame) {
         case 8: // move(src, dst), ebx = pointer request asal, ecx = pointer return code, edx = pointer request tujuan
             *((int8_t*) ecx) = move(*(struct EXT2DriverRequest*) ebx, *(struct EXT2DriverRequest*) edx);
             break;
+        case 9: // get time, ebx = pointer struct ClockTime
+            cmos_read_time((struct ClockTime*) ebx);
+            break;
+        case 10: // exit, ebx = return code main (belum dipakai)
+            exit_current_process();
+            break;
+        case 11: // exec(request), ebx = pointer request, ecx = pointer return code (int32_t)
+            *((int32_t*) ecx) = process_create_user_process(*(struct EXT2DriverRequest*) ebx);
+            break;
+        case 12: { // kill, ebx = PID, ecx = pointer bool hasil
+            struct ProcessControlBlock *current = process_get_current_running_pcb_pointer();
+            if (current != NULL && current->metadata.pid == ebx)
+                exit_current_process(); // kill diri sendiri sama dengan exit
+            *((bool*) ecx) = process_destroy(ebx);
+            break;
+        }
+        case 13: // ps, ebx = index slot, ecx = pointer struct ProcessInfo, edx = pointer bool (false kalau slot kosong)
+            *((bool*) edx) = process_get_info(ebx, (struct ProcessInfo*) ecx);
+            break;
+        case 14: { // tulis di posisi, ebx = row, ecx = col, edx = pointer string (null-terminated), esi = warna fg
+            char *str = (char*) edx;
+            for (uint32_t col = ecx; *str != '\0' && col < FRAMEBUFFER_WIDTH; col++, str++)
+                framebuffer_write(ebx, col, *str, frame.cpu.index.esi & 0xF, 0x0);
+            break;
+        }
     }
 }

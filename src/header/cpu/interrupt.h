@@ -40,6 +40,20 @@
 // Interrupt number untuk system call dari user mode
 #define SYSCALL_INT_NUMBER   0x30
 
+/* -- PIT (timer IRQ0) constants, dari guidebook 4.2.1.1 -- */
+#define PIT_MAX_FREQUENCY   1193182
+#define PIT_TIMER_FREQUENCY 1000
+#define PIT_TIMER_COUNTER   (PIT_MAX_FREQUENCY / PIT_TIMER_FREQUENCY)
+
+#define PIT_COMMAND_REGISTER_PIO          0x43
+#define PIT_COMMAND_VALUE_BINARY_MODE     0b0
+#define PIT_COMMAND_VALUE_OPR_SQUARE_WAVE (0b011 << 1)
+#define PIT_COMMAND_VALUE_ACC_LOHIBYTE    (0b11  << 4)
+#define PIT_COMMAND_VALUE_CHANNEL         (0b00  << 6)
+#define PIT_COMMAND_VALUE (PIT_COMMAND_VALUE_BINARY_MODE | PIT_COMMAND_VALUE_OPR_SQUARE_WAVE | PIT_COMMAND_VALUE_ACC_LOHIBYTE | PIT_COMMAND_VALUE_CHANNEL)
+
+#define PIT_CHANNEL_0_DATA_PIO 0x40
+
 /* -- PICs IRQ list -- */
 
 // PIC Master
@@ -164,6 +178,9 @@ void syscall(struct InterruptFrame frame);
 
 // Activate PIC mask for keyboard only
 void activate_keyboard_interrupt(void);
+
+// Setup PIT agar mengirim IRQ0 secara periodik, lalu buka mask IRQ0 di PIC
+void activate_timer_interrupt(void);
 
 // I/O port wait, around 1-4 microsecond, for I/O synchronization purpose
 void io_wait(void);
