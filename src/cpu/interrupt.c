@@ -169,6 +169,8 @@ void syscall(struct InterruptFrame frame) {
             *((bool*) edx) = process_get_info(ebx, (struct ProcessInfo*) ecx);
             break;
         case 14: { // tulis di posisi, ebx = row, ecx = col, edx = pointer string (null-terminated), esi = warna fg
+            if (ebx >= FRAMEBUFFER_HEIGHT)
+                break;
             char *str = (char*) edx;
             for (uint32_t col = ecx; *str != '\0' && col < FRAMEBUFFER_WIDTH; col++, str++)
                 framebuffer_write(ebx, col, *str, frame.cpu.index.esi & 0xF, 0x0);
