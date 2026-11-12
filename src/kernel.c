@@ -9,6 +9,7 @@
 #include "header/filesystem/ext2.h"
 #include "header/memory/paging.h"
 #include "header/process/process.h"
+#include "header/scheduler/scheduler.h"
 
 void kernel_setup(void) {
     load_gdt(&_gdt_gdtr);
@@ -33,13 +34,11 @@ void kernel_setup(void) {
     // Set TSS.esp0 for interprivilege interrupt
     set_tss_kernel_current_stack();
 
-    // Create & execute process 0 (shell sebagai init process)
+    // Create init process (shell) and execute it lewat scheduler
     if (process_create_user_process(request) != PROCESS_CREATE_SUCCESS) {
         framebuffer_puts("Gagal membuat process shell, jalankan make insert-shell", 55, 0xC);
         while (true);
     }
-    paging_use_page_directory(_process_list[0].context.page_directory_virtual_addr);
-    kernel_execute_user_program((uint8_t*) 0);
-
-    while (true);
+    scheduler_init();
+    scheduler_switch_to_next_process();
 }
