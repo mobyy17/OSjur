@@ -82,6 +82,9 @@ static void run_command(int argc, char *argv[]) {
     else if (str_eq(cmd, "mv"))    cmd_mv(argc, argv);
     else if (str_eq(cmd, "find"))  cmd_find(argc, argv);
     else if (str_eq(cmd, "grep"))  cmd_grep(argc, argv);
+    else if (str_eq(cmd, "exec"))  cmd_exec(argc, argv);
+    else if (str_eq(cmd, "ps"))    cmd_ps(argc, argv);
+    else if (str_eq(cmd, "kill"))  cmd_kill(argc, argv);
     else {
         out_puts(cmd);
         out_puts(": perintah tidak dikenal\n");
