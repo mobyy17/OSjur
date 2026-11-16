@@ -152,7 +152,7 @@ void syscall(struct InterruptFrame frame) {
         case 9: // get time, ebx = pointer struct ClockTime
             cmos_read_time((struct ClockTime*) ebx);
             break;
-        case 10: // exit, ebx = return code main (belum dipakai)
+        case 10: // exit, dipanggil crt0 setelah main selesai. ebx = return code main (diabaikan kernel)
             exit_current_process();
             break;
         case 11: // exec(request), ebx = pointer request, ecx = pointer return code (int32_t)
