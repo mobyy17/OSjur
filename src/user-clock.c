@@ -1,13 +1,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/* Jam di pojok kanan bawah layar. Ditulis lewat syscall 14 (tulis di posisi),
+/* Jam di pojok kanan atas layar. Ditulis lewat syscall 14 (tulis di posisi),
  * jadi kursor shell tidak bergeser. Jalan terus sampai di-kill. */
 
 #define SYSCALL_GET_TIME     9
 #define SYSCALL_WRITE_AT    14
 
-#define CLOCK_ROW           24
+#define CLOCK_ROW           0
 #define CLOCK_COL           72   // "HH:MM:SS" = 8 karakter, pas sampai kolom 79
 #define CLOCK_COLOR         0xE  // kuning
 #define TIMEZONE_OFFSET     7    // RTC QEMU memberi UTC, ditampilkan sebagai WIB
