@@ -82,3 +82,25 @@ user-shell:
 insert-shell: inserter user-shell
 	@echo Inserting shell into root directory...
 	@cd $(OUTPUT_FOLDER); ./inserter -f shell 1 $(DISK_NAME).bin
+
+# Aplikasi user Ch.4: tiap aplikasi = crt0 + satu file C, tanpa library shell
+user-hello:
+	@$(ASM) $(AFLAGS) $(SOURCE_FOLDER)/crt0.s -o crt0.o
+	@$(CC)  $(CFLAGS) -fno-pie $(SOURCE_FOLDER)/user-hello.c -o user-hello.o
+	@$(LIN) -T $(SOURCE_FOLDER)/user-linker.ld -melf_i386 --oformat=binary \
+		crt0.o user-hello.o -o $(OUTPUT_FOLDER)/hello
+	@size --target=binary $(OUTPUT_FOLDER)/hello
+	@rm -f crt0.o user-hello.o
+
+user-clock:
+	@$(ASM) $(AFLAGS) $(SOURCE_FOLDER)/crt0.s -o crt0.o
+	@$(CC)  $(CFLAGS) -fno-pie $(SOURCE_FOLDER)/user-clock.c -o user-clock.o
+	@$(LIN) -T $(SOURCE_FOLDER)/user-linker.ld -melf_i386 --oformat=binary \
+		crt0.o user-clock.o -o $(OUTPUT_FOLDER)/clock
+	@size --target=binary $(OUTPUT_FOLDER)/clock
+	@rm -f crt0.o user-clock.o
+
+insert-apps: inserter user-hello user-clock
+	@echo Inserting apps into root directory...
+	@cd $(OUTPUT_FOLDER); ./inserter -f hello 1 $(DISK_NAME).bin
+	@cd $(OUTPUT_FOLDER); ./inserter -f clock 1 $(DISK_NAME).bin

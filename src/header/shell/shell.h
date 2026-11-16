@@ -46,6 +46,35 @@
 #define SYSCALL_PUTS           6
 #define SYSCALL_KEYBOARD_ON    7
 #define SYSCALL_MOVE           8
+#define SYSCALL_GET_TIME       9
+#define SYSCALL_EXIT           10
+#define SYSCALL_EXEC           11
+#define SYSCALL_KILL           12
+#define SYSCALL_PS             13
+#define SYSCALL_WRITE_AT       14
+
+/* Sama dengan konstanta di header/process/process.h. process.h tidak di-include
+ * karena ikut membawa header kernel (interrupt, paging). */
+#define PROCESS_COUNT_MAX       16
+#define PROCESS_NAME_LENGTH_MAX 32
+
+/* Return code exec, sama dengan PROCESS_CREATE_* di process.h */
+#define EXEC_SUCCESS                   0
+#define EXEC_FAIL_MAX_PROCESS_EXCEEDED 1
+#define EXEC_FAIL_INVALID_ENTRYPOINT   2
+#define EXEC_FAIL_NOT_ENOUGH_MEMORY    3
+#define EXEC_FAIL_FS_READ_FAILURE      4
+
+/* Layout harus sama dengan struct ProcessInfo di process.h.
+ * state memakai uint32_t karena enum PROCESS_STATE berukuran 4 byte. */
+#define PROCESS_STATE_READY   0
+#define PROCESS_STATE_RUNNING 1
+#define PROCESS_STATE_WAITING 2
+struct ProcessInfo {
+    uint32_t pid;
+    char     name[PROCESS_NAME_LENGTH_MAX];
+    uint32_t state;
+};
 
 /* State shell, didefinisikan di user-shell.c */
 extern uint32_t cwd_inode;
@@ -180,5 +209,8 @@ void cmd_rm(int argc, char *argv[]);    // Diandra
 void cmd_mv(int argc, char *argv[]);    // Diandra
 void cmd_find(int argc, char *argv[]);  // Lewi
 void cmd_grep(int argc, char *argv[]);  // Lewi
+void cmd_exec(int argc, char *argv[]);  // Rapip
+void cmd_ps(int argc, char *argv[]);    // Rapip
+void cmd_kill(int argc, char *argv[]);  // Rapip
 
 #endif
