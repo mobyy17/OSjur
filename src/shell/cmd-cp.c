@@ -35,6 +35,10 @@ void cmd_cp(int argc, char *argv[]) {
         parent = inode;
         name   = argv[1];
     }
+    if (has_slash(name)) {
+        out_puts("cp: nama tidak boleh mengandung '/'\n");
+        return;
+    }
 
     struct EXT2DriverRequest request = {
         .buf          = buf,

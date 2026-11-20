@@ -11,6 +11,12 @@ void cmd_exec(int argc, char *argv[]) {
         return;
     }
 
+    // Shell kedua bakal rebutan input keyboard sama shell yang sekarang
+    if (str_eq(argv[1], "shell")) {
+        out_puts("exec: shell sudah berjalan\n");
+        return;
+    }
+
     // Cek dulu di sisi shell supaya pesan error lebih jelas dari kode FS_READ_FAILURE
     uint32_t inode = 0;
     bool     is_dir = false;

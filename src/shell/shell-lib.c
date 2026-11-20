@@ -64,6 +64,12 @@ bool str_eq(const char *a, const char *b) {
     return a[i] == b[i];
 }
 
+bool has_slash(const char *s) {
+    for (uint32_t i = 0; s[i] != '\0'; i++)
+        if (s[i] == '/') return true;
+    return false;
+}
+
 /* ===== Directory dan file ===== */
 uint32_t dir_read_table(uint32_t dir_inode, uint8_t *table) {
     // Entry "." di dalam folder menunjuk ke folder itu sendiri,
