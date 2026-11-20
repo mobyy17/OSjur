@@ -17,8 +17,13 @@ CFLAGS        = $(DEBUG_CFLAG) $(WARNING_CFLAG) $(STRIP_CFLAG) -m32 -c -I$(SOURC
 AFLAGS        = -f elf32 -g -F dwarf
 LFLAGS        = -T $(SOURCE_FOLDER)/linker.ld -melf_i386
 
+.PHONY: run start all build disk clean kernel iso inserter user-shell insert-shell user-hello user-clock insert-apps
+
 run: all
 	@qemu-system-i386 -s -S -drive file=$(OUTPUT_FOLDER)/$(DISK_NAME).bin,format=raw,if=ide,index=0,media=disk -cdrom $(OUTPUT_FOLDER)/$(ISO_NAME).iso
+
+start: all
+	@qemu-system-i386 -drive file=$(OUTPUT_FOLDER)/$(DISK_NAME).bin,format=raw,if=ide,index=0,media=disk -cdrom $(OUTPUT_FOLDER)/$(ISO_NAME).iso
 
 all: build
 
@@ -29,6 +34,7 @@ disk:
 
 clean:
 	rm -rf $(OUTPUT_FOLDER)/*.o $(OUTPUT_FOLDER)/*.iso $(OUTPUT_FOLDER)/kernel
+	rm -f $(OUTPUT_FOLDER)/inserter $(OUTPUT_FOLDER)/shell $(OUTPUT_FOLDER)/hello $(OUTPUT_FOLDER)/clock
 
 kernel:
 	@mkdir -p $(OUTPUT_FOLDER)
