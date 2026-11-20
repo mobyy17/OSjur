@@ -1,11 +1,11 @@
 #include "header/driver/disk.h"
 #include "header/cpu/portio.h"
 
-static void ATA_busy_wait() {
+static void ATA_busy_wait(void) {
     while (in(0x1F7) & ATA_STATUS_BSY);
 }
 
-static void ATA_DRQ_wait() {
+static void ATA_DRQ_wait(void) {
     while (!(in(0x1F7) & ATA_STATUS_RDY));
 }
 
