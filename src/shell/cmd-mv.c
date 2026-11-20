@@ -36,6 +36,10 @@ void cmd_mv(int argc, char *argv[]) {
         dst.name         = argv[1];
         dst.name_len     = src.name_len;
     }
+    if (has_slash(dst.name)) {
+        out_puts("mv: nama tidak boleh mengandung '/'\n");
+        return;
+    }
 
     int8_t retcode = -1;
     syscall(SYSCALL_MOVE, (uint32_t) &src, (uint32_t) &retcode, (uint32_t) &dst);

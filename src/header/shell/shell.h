@@ -146,6 +146,9 @@ uint32_t str_len(const char *s);
 /** @return true kalau a dan b sama persis */
 bool str_eq(const char *a, const char *b);
 
+/** @return true kalau s mengandung '/'. Path belum didukung, jadi nama seperti ini ditolak */
+bool has_slash(const char *s);
+
 /**
  * Baca directory table milik folder dir_inode (lewat syscall read_directory ke entry ".").
  *

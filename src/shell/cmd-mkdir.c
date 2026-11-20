@@ -6,6 +6,10 @@ void cmd_mkdir(int argc, char *argv[]) {
         out_puts("pemakaian: mkdir <nama>\n");
         return;
     }
+    if (has_slash(argv[1])) {
+        out_puts("mkdir: nama tidak boleh mengandung '/'\n");
+        return;
+    }
 
     struct EXT2DriverRequest request = {
         .buf          = 0,
