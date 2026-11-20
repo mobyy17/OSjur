@@ -91,6 +91,8 @@ static void timer_isr(struct InterruptFrame frame) {
     scheduler_switch_to_next_process();
 }
 
+static void exception_handler(struct InterruptFrame frame);
+
 void main_interrupt_handler(struct InterruptFrame frame) {
     switch (frame.int_number) {
         case PIC1_OFFSET + IRQ_TIMER:
@@ -101,6 +103,10 @@ void main_interrupt_handler(struct InterruptFrame frame) {
             break;
         case SYSCALL_INT_NUMBER:
             syscall(frame);
+            break;
+        default:
+            if (frame.int_number < 32) // 0-31 = exception CPU
+                exception_handler(frame);
             break;
     }
 }
@@ -116,10 +122,66 @@ static void exit_current_process(void) {
         scheduler_switch_to_next_process();
 }
 
+/**
+ * Exception CPU (divide by zero, page fault, GPF, dll).
+ * Tanpa handler ini, iret balik ke instruksi yang sama dan fault terus tanpa henti.
+ * Kalau terjadi di user mode, process-nya dimatikan. Kalau di kernel, atau di shell yang memang
+ * tidak bisa di-kill, sudah tidak ada yang bisa diselamatkan: tampilkan nomornya lalu berhenti.
+ */
+static void exception_handler(struct InterruptFrame frame) {
+    if ((frame.int_stack.cs & 0x3) == 0x3)
+        exit_current_process(); // tidak kembali kalau berhasil
+
+    char msg[] = "\nException 00, sistem dihentikan";
+    msg[11] = '0' + frame.int_number / 10;
+    msg[12] = '0' + frame.int_number % 10;
+    framebuffer_puts(msg, sizeof(msg) - 1, 0xC);
+    while (true)
+        __asm__ volatile("cli; hlt");
+}
+
+// Memori process user cuma 4 MiB pertama (PDE 0), di atasnya punya kernel
+#define USER_MEMORY_END 0x400000
+
+static bool user_ptr_ok(uint32_t ptr, uint32_t len) {
+    // ptr + len < ptr artinya overflow (len kegedean)
+    return ptr + len >= ptr && ptr + len <= USER_MEMORY_END;
+}
+
+static bool user_request_ok(uint32_t ptr) {
+    if (!user_ptr_ok(ptr, sizeof(struct EXT2DriverRequest)))
+        return false;
+    struct EXT2DriverRequest *req = (struct EXT2DriverRequest*) ptr;
+    return user_ptr_ok((uint32_t) req->buf, req->buffer_size)
+        && user_ptr_ok((uint32_t) req->name, req->name_len);
+}
+
+/* Cek pointer argumen syscall sebelum dipakai. Tanpa ini program user bisa menyuruh kernel menulis ke memori kernel, atau bikin kernel page fault (dan seluruh OS ikut beku). */
+static bool syscall_args_ok(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx) {
+    switch (eax) {
+        case 0: case 1: case 2: case 3:
+            return user_request_ok(ebx) && user_ptr_ok(ecx, sizeof(int8_t));
+        case 4:  return user_ptr_ok(ebx, sizeof(char));
+        case 6:  return user_ptr_ok(ebx, ecx);
+        case 8:  return user_request_ok(ebx) && user_request_ok(edx) && user_ptr_ok(ecx, sizeof(int8_t));
+        case 9:  return user_ptr_ok(ebx, sizeof(struct ClockTime));
+        case 11: return user_request_ok(ebx) && user_ptr_ok(ecx, sizeof(int32_t));
+        case 12: return user_ptr_ok(ecx, sizeof(bool));
+        case 13: return user_ptr_ok(ecx, sizeof(struct ProcessInfo)) && user_ptr_ok(edx, sizeof(bool));
+        case 14: return edx < USER_MEMORY_END;
+        default: return true;
+    }
+}
+
 void syscall(struct InterruptFrame frame) {
     uint32_t ebx = frame.cpu.general.ebx;
     uint32_t ecx = frame.cpu.general.ecx;
     uint32_t edx = frame.cpu.general.edx;
+
+    if (!syscall_args_ok(frame.cpu.general.eax, ebx, ecx, edx)) {
+        exit_current_process();
+        return;
+    }
 
     switch (frame.cpu.general.eax) {
         case 0: // read(request), ebx = pointer request, ecx = pointer return code
@@ -172,7 +234,7 @@ void syscall(struct InterruptFrame frame) {
             if (ebx >= FRAMEBUFFER_HEIGHT)
                 break;
             char *str = (char*) edx;
-            for (uint32_t col = ecx; *str != '\0' && col < FRAMEBUFFER_WIDTH; col++, str++)
+            for (uint32_t col = ecx; (uint32_t) str < USER_MEMORY_END && *str != '\0' && col < FRAMEBUFFER_WIDTH; col++, str++)
                 framebuffer_write(ebx, col, *str, frame.cpu.index.esi & 0xF, 0x0);
             break;
         }
