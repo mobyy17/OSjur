@@ -31,8 +31,9 @@ void framebuffer_clear(void) {
     }
 }
 
-// Posisi cursor untuk framebuffer_putchar(), dipakai output dari syscall
-static uint8_t cursor_row = 0;
+// Posisi cursor untuk framebuffer_putchar(), dipakai output dari syscall.
+// Baris 0 disisakan untuk clock, jadi teks shell mulai dari baris 1 dan baris 0 tidak ikut scroll.
+static uint8_t cursor_row = 1;
 static uint8_t cursor_col = 0;
 
 void framebuffer_putchar(char c, uint8_t color) {
@@ -53,10 +54,8 @@ void framebuffer_putchar(char c, uint8_t color) {
         }
     }
 
-    // Layar penuh: geser semua baris naik satu, kosongkan baris terakhir
     if (cursor_row >= FRAMEBUFFER_HEIGHT) {
-        memmove(FRAMEBUFFER_MEMORY_OFFSET, FRAMEBUFFER_MEMORY_OFFSET + FRAMEBUFFER_WIDTH * 2,
-                (FRAMEBUFFER_HEIGHT - 1) * FRAMEBUFFER_WIDTH * 2);
+        memmove(FRAMEBUFFER_MEMORY_OFFSET + FRAMEBUFFER_WIDTH * 2, FRAMEBUFFER_MEMORY_OFFSET + FRAMEBUFFER_WIDTH * 2 * 2, (FRAMEBUFFER_HEIGHT - 2) * FRAMEBUFFER_WIDTH * 2);
         for (uint8_t col = 0; col < FRAMEBUFFER_WIDTH; col++)
             framebuffer_write(FRAMEBUFFER_HEIGHT - 1, col, 0x00, 0x7, 0x0);
         cursor_row = FRAMEBUFFER_HEIGHT - 1;
