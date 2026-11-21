@@ -8,6 +8,7 @@
 #include "header/memory/paging.h"
 #include "header/process/process.h"
 #include "header/scheduler/scheduler.h"
+#include "header/cpu/syscall-ext.h"
 
 struct TSSEntry _interrupt_tss_entry = {
     .ss0 = GDT_KERNEL_DATA_SEGMENT_SELECTOR,
@@ -85,6 +86,7 @@ static void timer_isr(struct InterruptFrame frame) {
         .page_directory_virtual_addr = paging_get_current_page_directory_addr(),
     };
     scheduler_save_context_to_current_running_pcb(ctx);
+    tick_increment();
 
     // ACK wajib sebelum switch, kalau tidak IRQ0 berikutnya tidak akan pernah datang
     pic_ack(IRQ_TIMER);
@@ -169,6 +171,7 @@ static bool syscall_args_ok(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t e
         case 12: return user_ptr_ok(ecx, sizeof(bool));
         case 13: return user_ptr_ok(ecx, sizeof(struct ProcessInfo)) && user_ptr_ok(edx, sizeof(bool));
         case 14: return edx < USER_MEMORY_END;
+        case 15: return user_ptr_ok(ebx, sizeof(uint32_t));
         default: return true;
     }
 }
@@ -238,5 +241,14 @@ void syscall(struct InterruptFrame frame) {
                 framebuffer_write(ebx, col, *str, frame.cpu.index.esi & 0xF, 0x0);
             break;
         }
+        case 15: // get tick, ebx = pointer uint32_t
+            *((uint32_t*) ebx) = tick_get();
+            break;
+        case 17: // shutdown
+            power_shutdown();
+            break;
+        case 18: // beep, ebx = frekuensi Hz (0 = mati)
+            speaker_play(ebx);
+            break;
     }
 }
