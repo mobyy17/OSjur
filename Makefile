@@ -146,15 +146,12 @@ user-badapple:
 	@size --target=binary $(OUTPUT_FOLDER)/badapple
 	@rm -f crt0.o user-badapple.o
 
-# echo, args, badapple, dan contoh script demo.sh
+# echo, args, badapple
 insert-bonus: inserter user-echo user-args user-badapple
 	@echo Inserting bonus apps into root directory...
 	@cd $(OUTPUT_FOLDER); ./inserter -f echo 1 $(DISK_NAME).bin
 	@cd $(OUTPUT_FOLDER); ./inserter -f args 1 $(DISK_NAME).bin
 	@cd $(OUTPUT_FOLDER); ./inserter -f badapple 1 $(DISK_NAME).bin
-	@cp other/demo.sh $(OUTPUT_FOLDER)/demo.sh
-	@cd $(OUTPUT_FOLDER); ./inserter -f demo.sh 1 $(DISK_NAME).bin
-	@rm -f $(OUTPUT_FOLDER)/demo.sh
 
 # Bad Apple: ubah video jadi frame 80x24 1 bit (butuh ffmpeg + python3).
 # Pemakaian: make badapple-data VIDEO=path/ke/badapple.mp4
