@@ -54,6 +54,14 @@
 #define SYSCALL_WRITE_AT       14
 #define SYSCALL_GET_TICK       15
 #define SYSCALL_BEEP           18
+#define SYSCALL_EXEC_ARGS      20
+
+/* Layout harus sama dengan struct ExecArgs di header/cpu/syscall-ext.h */
+struct ExecArgs {
+    uint32_t argc;
+    char     *argv[SHELL_ARGV_MAX];
+    uint32_t pid;
+};
 
 /* Sama dengan konstanta di header/process/process.h. process.h tidak di-include
  * karena ikut membawa header kernel (interrupt, paging). */

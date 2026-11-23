@@ -9,6 +9,7 @@
 #include "header/process/process.h"
 #include "header/scheduler/scheduler.h"
 #include "header/cpu/syscall-ext.h"
+#include "header/process/process-args.h"
 
 struct TSSEntry _interrupt_tss_entry = {
     .ss0 = GDT_KERNEL_DATA_SEGMENT_SELECTOR,
@@ -172,6 +173,7 @@ static bool syscall_args_ok(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t e
         case 13: return user_ptr_ok(ecx, sizeof(struct ProcessInfo)) && user_ptr_ok(edx, sizeof(bool));
         case 14: return edx < USER_MEMORY_END;
         case 15: return user_ptr_ok(ebx, sizeof(uint32_t));
+        case 20: return user_request_ok(ebx) && user_ptr_ok(ecx, sizeof(int32_t)) && user_ptr_ok(edx, sizeof(struct ExecArgs));
         default: return true;
     }
 }
@@ -249,6 +251,9 @@ void syscall(struct InterruptFrame frame) {
             break;
         case 18: // beep, ebx = frekuensi Hz (0 = mati)
             speaker_play(ebx);
+            break;
+        case 20: // exec dengan argumen, ebx = request, ecx = pointer return code, edx = pointer struct ExecArgs
+            *((int32_t*) ecx) = process_create_user_process_with_args(*(struct EXT2DriverRequest*) ebx, (struct ExecArgs*) edx);
             break;
     }
 }

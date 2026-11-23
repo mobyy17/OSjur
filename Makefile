@@ -18,7 +18,7 @@ AFLAGS        = -f elf32 -g -F dwarf
 LFLAGS        = -T $(SOURCE_FOLDER)/linker.ld -melf_i386
 
 .PHONY: run start all build disk clean kernel iso inserter user-shell insert-shell user-hello user-clock insert-apps \
-	run-audio user-badapple badapple-data insert-badapple
+	run-audio user-echo user-args user-badapple insert-bonus badapple-data insert-badapple
 
 run: all
 	@qemu-system-i386 -s -S -drive file=$(OUTPUT_FOLDER)/$(DISK_NAME).bin,format=raw,if=ide,index=0,media=disk -cdrom $(OUTPUT_FOLDER)/$(ISO_NAME).iso
@@ -42,7 +42,7 @@ disk:
 clean:
 	rm -rf $(OUTPUT_FOLDER)/*.o $(OUTPUT_FOLDER)/*.iso $(OUTPUT_FOLDER)/kernel
 	rm -f $(OUTPUT_FOLDER)/inserter $(OUTPUT_FOLDER)/shell $(OUTPUT_FOLDER)/hello $(OUTPUT_FOLDER)/clock
-	rm -f $(OUTPUT_FOLDER)/badapple
+	rm -f $(OUTPUT_FOLDER)/echo $(OUTPUT_FOLDER)/args $(OUTPUT_FOLDER)/badapple
 
 kernel:
 	@mkdir -p $(OUTPUT_FOLDER)
@@ -63,6 +63,7 @@ kernel:
 	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/process/process.c -o $(OUTPUT_FOLDER)/process.o
 	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/scheduler/scheduler.c -o $(OUTPUT_FOLDER)/scheduler.o
 	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/cpu/syscall-ext.c -o $(OUTPUT_FOLDER)/syscall-ext.o
+	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/process/process-args.c -o $(OUTPUT_FOLDER)/process-args.o
 	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/kernel.c -o $(OUTPUT_FOLDER)/kernel.o
 	@$(LIN) $(LFLAGS) $(OUTPUT_FOLDER)/*.o -o $(OUTPUT_FOLDER)/kernel
 	@echo Linking object files and generate elf32...
@@ -121,6 +122,22 @@ insert-apps: inserter user-hello user-clock
 	@cd $(OUTPUT_FOLDER); ./inserter -f clock 1 $(DISK_NAME).bin
 
 # ===== Aplikasi bonus =====
+user-echo:
+	@$(ASM) $(AFLAGS) $(SOURCE_FOLDER)/crt0.s -o crt0.o
+	@$(CC)  $(CFLAGS) -fno-pie $(SOURCE_FOLDER)/user-echo.c -o user-echo.o
+	@$(LIN) -T $(SOURCE_FOLDER)/user-linker.ld -melf_i386 --oformat=binary \
+		crt0.o user-echo.o -o $(OUTPUT_FOLDER)/echo
+	@size --target=binary $(OUTPUT_FOLDER)/echo
+	@rm -f crt0.o user-echo.o
+
+user-args:
+	@$(ASM) $(AFLAGS) $(SOURCE_FOLDER)/crt0.s -o crt0.o
+	@$(CC)  $(CFLAGS) -fno-pie $(SOURCE_FOLDER)/user-args.c -o user-args.o
+	@$(LIN) -T $(SOURCE_FOLDER)/user-linker.ld -melf_i386 --oformat=binary \
+		crt0.o user-args.o -o $(OUTPUT_FOLDER)/args
+	@size --target=binary $(OUTPUT_FOLDER)/args
+	@rm -f crt0.o user-args.o
+
 user-badapple:
 	@$(ASM) $(AFLAGS) $(SOURCE_FOLDER)/crt0.s -o crt0.o
 	@$(CC)  $(CFLAGS) -fno-pie $(SOURCE_FOLDER)/user-badapple.c -o user-badapple.o
@@ -128,6 +145,13 @@ user-badapple:
 		crt0.o user-badapple.o -o $(OUTPUT_FOLDER)/badapple
 	@size --target=binary $(OUTPUT_FOLDER)/badapple
 	@rm -f crt0.o user-badapple.o
+
+# echo, args, badapple
+insert-bonus: inserter user-echo user-args user-badapple
+	@echo Inserting bonus apps into root directory...
+	@cd $(OUTPUT_FOLDER); ./inserter -f echo 1 $(DISK_NAME).bin
+	@cd $(OUTPUT_FOLDER); ./inserter -f args 1 $(DISK_NAME).bin
+	@cd $(OUTPUT_FOLDER); ./inserter -f badapple 1 $(DISK_NAME).bin
 
 # Bad Apple: ubah video jadi frame 80x24 1 bit (butuh ffmpeg + python3).
 # Pemakaian: make badapple-data VIDEO=path/ke/badapple.mp4
