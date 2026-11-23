@@ -10,6 +10,7 @@
 #include "header/scheduler/scheduler.h"
 #include "header/cpu/syscall-ext.h"
 #include "header/process/process-args.h"
+#include "header/memory/heap.h"
 
 struct TSSEntry _interrupt_tss_entry = {
     .ss0 = GDT_KERNEL_DATA_SEGMENT_SELECTOR,
@@ -174,6 +175,10 @@ static bool syscall_args_ok(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t e
         case 14: return edx < USER_MEMORY_END;
         case 15: return user_ptr_ok(ebx, sizeof(uint32_t));
         case 20: return user_request_ok(ebx) && user_ptr_ok(ecx, sizeof(int32_t)) && user_ptr_ok(edx, sizeof(struct ExecArgs));
+        case 22: return user_ptr_ok(ecx, sizeof(uint32_t));
+        case 23: return user_ptr_ok(ecx, sizeof(bool));
+        case 24: return user_ptr_ok(ebx, sizeof(struct HeapInfo));
+        case 26: return user_ptr_ok(ecx, sizeof(struct HeapBlockInfo)) && user_ptr_ok(edx, sizeof(bool));
         default: return true;
     }
 }
@@ -235,16 +240,24 @@ void syscall(struct InterruptFrame frame) {
         case 13: // ps, ebx = index slot, ecx = pointer struct ProcessInfo, edx = pointer bool (false kalau slot kosong)
             *((bool*) edx) = process_get_info(ebx, (struct ProcessInfo*) ecx);
             break;
-        case 14: { // tulis di posisi, ebx = row, ecx = col, edx = pointer string (null-terminated), esi = warna fg
+        case 14: { // tulis di posisi, ebx = row, ecx = col, edx = pointer string (null-terminated), esi = atribut (fg nibble bawah, bg nibble atas, bg 0 = background shell)
             if (ebx >= FRAMEBUFFER_HEIGHT)
                 break;
+            if (ebx > 0)
+                framebuffer_scroll_reset();
             char *str = (char*) edx;
+            uint8_t bg = (frame.cpu.index.esi >> 4) & 0xF;
+            if (bg == 0)
+                bg = framebuffer_get_background();
             for (uint32_t col = ecx; (uint32_t) str < USER_MEMORY_END && *str != '\0' && col < FRAMEBUFFER_WIDTH; col++, str++)
-                framebuffer_write(ebx, col, *str, frame.cpu.index.esi & 0xF, 0x0);
+                framebuffer_write(ebx, col, *str, frame.cpu.index.esi & 0xF, bg);
             break;
         }
         case 15: // get tick, ebx = pointer uint32_t
             *((uint32_t*) ebx) = tick_get();
+            break;
+        case 16: // bersihkan layar shell
+            framebuffer_clear_shell();
             break;
         case 17: // shutdown
             power_shutdown();
@@ -252,8 +265,26 @@ void syscall(struct InterruptFrame frame) {
         case 18: // beep, ebx = frekuensi Hz (0 = mati)
             speaker_play(ebx);
             break;
+        case 21: // ganti background shell, ebx = warna 0-15
+            framebuffer_set_background((uint8_t) ebx);
+            break;
         case 20: // exec dengan argumen, ebx = request, ecx = pointer return code, edx = pointer struct ExecArgs
             *((int32_t*) ecx) = process_create_user_process_with_args(*(struct EXT2DriverRequest*) ebx, (struct ExecArgs*) edx);
+            break;
+        case 22: // malloc, ebx = ukuran byte, ecx = pointer uint32_t hasil (0 kalau gagal)
+            *((uint32_t*) ecx) = kernel_malloc(ebx);
+            break;
+        case 23: // free, ebx = pointer hasil malloc, ecx = pointer bool (false kalau pointer tidak valid)
+            *((bool*) ecx) = kernel_free(ebx);
+            break;
+        case 24: // info heap, ebx = pointer struct HeapInfo
+            heap_get_info((struct HeapInfo*) ebx);
+            break;
+        case 25: // gulung layar shell, ebx = jumlah baris (int32, positif ke atas, 0 kembali ke bawah)
+            framebuffer_scroll_view((int32_t) ebx);
+            break;
+        case 26: // dump blok heap, ebx = index blok, ecx = pointer struct HeapBlockInfo, edx = pointer bool ada
+            *((bool*) edx) = heap_get_block(ebx, (struct HeapBlockInfo*) ecx);
             break;
     }
 }
