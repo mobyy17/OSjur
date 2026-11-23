@@ -162,6 +162,9 @@ insert-bonus: inserter user-echo user-args user-badapple user-memtest
 	@cd $(OUTPUT_FOLDER); ./inserter -f args 1 $(DISK_NAME).bin
 	@cd $(OUTPUT_FOLDER); ./inserter -f badapple 1 $(DISK_NAME).bin
 	@cd $(OUTPUT_FOLDER); ./inserter -f memtest 1 $(DISK_NAME).bin
+	@cp other/demo.sh $(OUTPUT_FOLDER)/demo.sh
+	@cd $(OUTPUT_FOLDER); ./inserter -f demo.sh 1 $(DISK_NAME).bin
+	@rm -f $(OUTPUT_FOLDER)/demo.sh
 
 # Bad Apple: ubah video jadi frame 80x24 1 bit (butuh ffmpeg + python3).
 # Pemakaian: make badapple-data VIDEO=path/ke/badapple.mp4
