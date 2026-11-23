@@ -55,6 +55,13 @@
 #define SYSCALL_GET_TICK       15
 #define SYSCALL_BEEP           18
 #define SYSCALL_EXEC_ARGS      20
+#define SYSCALL_SCROLL         25
+
+/* Kode tombol dari keyboard driver, sama dengan KEY_* di keyboard.h */
+#define KEY_UP_CHAR    0x11
+#define KEY_DOWN_CHAR  0x12
+#define KEY_PGUP_CHAR  0x15
+#define KEY_PGDN_CHAR  0x16
 
 /* Layout harus sama dengan struct ExecArgs di header/cpu/syscall-ext.h */
 struct ExecArgs {
@@ -226,6 +233,23 @@ void cmd_exec(int argc, char *argv[]);  // Rapip
 void cmd_ps(int argc, char *argv[]);    // Rapip
 void cmd_kill(int argc, char *argv[]);  // Rapip
 
+/* user-shell.c */
+void shell_print_prompt(void);
+void shell_run_line(char *line); // jalankan satu baris seperti diketik di prompt (dipakai sh)
+
+/* shell-readline.c: baca satu baris, mendukung history (panah atas/bawah) dan Tab.
+ * @return false kalau dibatalkan dengan Ctrl+C */
+bool shell_read_line(char *line, uint32_t max_len);
+
+/* shell-history.c: ring buffer 16 perintah terakhir */
+void history_push(const char *line);
+void history_reset_cursor(void);
+const char *history_prev(void); // NULL kalau sudah paling lama
+const char *history_next(void); // NULL kalau sudah lewat yang terbaru (baris kosong)
+
+/* shell-autocomplete.c: lengkapi kata terakhir di line, return panjang line yang baru */
+uint32_t autocomplete(char *line, uint32_t len, uint32_t max_len);
+
 /* shell-util.c */
 uint32_t get_tick(void);
 void sleep_ms(uint32_t ms);
@@ -233,6 +257,7 @@ void beep(uint32_t freq, uint32_t ms);
 void write_at(uint32_t row, uint32_t col, const char *str, uint32_t color);
 bool process_alive(uint32_t pid);
 
+void cmd_sh(int argc, char *argv[]);
 void cmd_beep(int argc, char *argv[]);
 
 #endif
