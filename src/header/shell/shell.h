@@ -53,7 +53,45 @@
 #define SYSCALL_PS             13
 #define SYSCALL_WRITE_AT       14
 #define SYSCALL_GET_TICK       15
+#define SYSCALL_CLEAR_SCREEN   16
+#define SYSCALL_SHUTDOWN       17
 #define SYSCALL_BEEP           18
+#define SYSCALL_EXEC_ARGS      20
+#define SYSCALL_SET_BG         21
+#define SYSCALL_MALLOC         22
+#define SYSCALL_FREE           23
+#define SYSCALL_HEAP_INFO      24
+#define SYSCALL_SCROLL         25
+#define SYSCALL_HEAP_BLOCK     26
+
+struct HeapInfo {
+    uint32_t total;
+    uint32_t used;
+    uint32_t free;
+    uint32_t block_count;
+    uint32_t used_blocks;
+    uint32_t largest_free;
+};
+struct HeapBlockInfo {
+    uint32_t addr;
+    uint32_t size;
+    bool     used;
+};
+
+#define SHELL_DEFAULT_BG       0x0
+
+/* Kode tombol dari keyboard driver, sama dengan KEY_* di keyboard.h */
+#define KEY_UP_CHAR    0x11
+#define KEY_DOWN_CHAR  0x12
+#define KEY_PGUP_CHAR  0x15
+#define KEY_PGDN_CHAR  0x16
+
+/* Layout harus sama dengan struct ExecArgs di header/cpu/syscall-ext.h */
+struct ExecArgs {
+    uint32_t argc;
+    char     *argv[SHELL_ARGV_MAX];
+    uint32_t pid;
+};
 
 /* Sama dengan konstanta di header/process/process.h. process.h tidak di-include
  * karena ikut membawa header kernel (interrupt, paging). */
@@ -218,6 +256,23 @@ void cmd_exec(int argc, char *argv[]);  // Rapip
 void cmd_ps(int argc, char *argv[]);    // Rapip
 void cmd_kill(int argc, char *argv[]);  // Rapip
 
+/* user-shell.c */
+void shell_print_prompt(void);
+void shell_run_line(char *line); // jalankan satu baris seperti diketik di prompt (dipakai sh)
+
+/* shell-readline.c: baca satu baris, mendukung history (panah atas/bawah) dan Tab.
+ * @return false kalau dibatalkan dengan Ctrl+C */
+bool shell_read_line(char *line, uint32_t max_len);
+
+/* shell-history.c: ring buffer 16 perintah terakhir */
+void history_push(const char *line);
+void history_reset_cursor(void);
+const char *history_prev(void); // NULL kalau sudah paling lama
+const char *history_next(void); // NULL kalau sudah lewat yang terbaru (baris kosong)
+
+/* shell-autocomplete.c: lengkapi kata terakhir di line, return panjang line yang baru */
+uint32_t autocomplete(char *line, uint32_t len, uint32_t max_len);
+
 /* shell-util.c */
 uint32_t get_tick(void);
 void sleep_ms(uint32_t ms);
@@ -225,6 +280,29 @@ void beep(uint32_t freq, uint32_t ms);
 void write_at(uint32_t row, uint32_t col, const char *str, uint32_t color);
 bool process_alive(uint32_t pid);
 
+/* shell-banner.c */
+void banner_show(bool animate);
+
+/* cmd-run.c: jalankan executable di foreground (shell menunggu, Ctrl+C mematikannya).
+ * @return false kalau file tidak ditemukan di folder sekarang maupun root */
+bool run_program(int argc, char *argv[]);
+
+void cmd_sh(int argc, char *argv[]);
+void cmd_shutdown(int argc, char *argv[]);
 void cmd_beep(int argc, char *argv[]);
+void cmd_clear(int argc, char *argv[]);
+void cmd_help(int argc, char *argv[]);
+void cmd_osjur(int argc, char *argv[]);
+void cmd_bg(int argc, char *argv[]);
+
+/* Heap dan PATH (bonus) */
+void *malloc(uint32_t size);
+void free(void *ptr);
+void out_dec(uint32_t v);
+void out_hex32(uint32_t v);
+bool path_find_program(const char *name, uint32_t *parent);
+void cmd_meminfo(int argc, char *argv[]);
+void cmd_export(int argc, char *argv[]);
+void cmd_path(int argc, char *argv[]);
 
 #endif

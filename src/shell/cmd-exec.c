@@ -3,11 +3,11 @@
 /* Ukuran maksimum executable, sama dengan batas 1 MiB di user-linker.ld */
 #define EXEC_BUFFER_SIZE (1024 * 1024)
 
-/* exec <file>: jalankan file di folder sekarang sebagai process baru.
- * Shell tidak menunggu process itu selesai. */
+/* exec <file> [arg ...]: jalankan file di folder sekarang sebagai process baru.
+ * Shell tidak menunggu process itu selesai. Argumen diteruskan ke main(argc, argv) dengan argv[0] = nama file. */
 void cmd_exec(int argc, char *argv[]) {
-    if (argc != 2) {
-        out_puts("pemakaian: exec <file>\n");
+    if (argc < 2) {
+        out_puts("pemakaian: exec <file> [arg ...]\n");
         return;
     }
 
@@ -42,8 +42,12 @@ void cmd_exec(int argc, char *argv[]) {
         .buffer_size  = EXEC_BUFFER_SIZE,
         .is_directory = false,
     };
+    struct ExecArgs args = { .argc = (uint32_t) (argc - 1), .pid = 0 };
+    for (int i = 1; i < argc; i++)
+        args.argv[i - 1] = argv[i];
+
     int32_t retcode = -1;
-    syscall(SYSCALL_EXEC, (uint32_t) &request, (uint32_t) &retcode, 0);
+    syscall(SYSCALL_EXEC_ARGS, (uint32_t) &request, (uint32_t) &retcode, (uint32_t) &args);
 
     if (retcode == EXEC_SUCCESS)
         return;

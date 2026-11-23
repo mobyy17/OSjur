@@ -12,6 +12,7 @@ Sistem operasi x86 Protected Mode buatan kelompok OSjur untuk Tugas Besar IF2130
 - [Command Shell](#command-shell)
 - [Desain File System](#desain-file-system)
 - [Desain Paging & User Mode](#desain-paging--user-mode)
+- [Bonus](#bonus)
 - [Maskot Kelompok](#maskot-kelompok)
 
 ### Nama Kelompok
@@ -149,6 +150,89 @@ Batasan: `cat`/`cp` maks 64 KiB, `exec` maks 1 MiB, nama file dan folder tidak b
 - Frame allocator first fit di atas frame kernel. Frame yang baru dialokasikan langsung dikosongkan supaya `.bss` program user bersih.
 - Tiap process punya page directory sendiri (maks 32). Mapping kernel disalin ke setiap page directory, jadi kernel tetap bisa jalan apa pun CR3-nya.
 - Program user dimuat ke virtual address `0x0` (maks 1 MiB) dan user stack mulai dari `0x400000 - 4`, jadi 4 MiB virtual pertama dipetakan untuk user.
+
+### Bonus
+
+Bonus diuji di QEMU dengan machine default (`pc`). Ikuti langkah di bawah berurutan dari awal, terutama setelah `make disk`, supaya `storage.bin` tidak berisi shell versi lama.
+
+**1. Pasang tool tambahan (sekali saja)**
+
+```
+sudo apt update
+sudo apt install -y ffmpeg pipx
+pipx install yt-dlp
+```
+
+`ffmpeg` dipakai untuk mengubah video Bad Apple menjadi frame, `yt-dlp` untuk mengunduh videonya. Fitur PC speaker butuh QEMU 5.1 ke atas (cek dengan `qemu-system-i386 --version`).
+
+**2. Siapkan video Bad Apple (sekali saja)**
+
+Video tidak ikut di repo. Unduh dari link di spesifikasi bonus. Resolusi 360p sudah cukup karena video nanti diperkecil jadi 80x24.
+
+```
+~/.local/bin/yt-dlp -f "b[height<=360]/bv*[height<=360]+ba/b" --merge-output-format mp4 -o ~/badapple.mp4 "https://youtu.be/FtutLA63Cp8"
+ls -la ~/badapple.mp4
+```
+
+Kalau videonya sudah ada di Windows, cukup pakai path-nya di langkah 3, misalnya `VIDEO="/mnt/c/Users/<user>/Downloads/bad apple.mp4"` (pakai tanda kutip kalau ada spasi).
+
+**3. Build, isi disk, lalu jalankan**
+
+```
+make clean
+make disk
+make insert-shell insert-apps insert-bonus
+make badapple-data VIDEO=~/badapple.mp4
+make insert-badapple
+make run-audio
+```
+
+`make badapple-data` mencetak ringkasan jumlah frame dan file, lalu `make insert-badapple` menampilkan `ba00`, `ba01`, dan seterusnya. Dua langkah ini perlu diulang setiap habis `make disk`.
+
+`make run-audio` sama dengan `make start` ditambah suara PC speaker. Backend audio default-nya `pa` (jalan di WSL2 dengan WSLg). Kalau tidak tersedia, ganti dengan `make run-audio AUDIO_BACKEND=sdl` atau `AUDIO_BACKEND=alsa`. Tanpa suara, pakai `make start`. Jangan pakai `make run` untuk demo karena target itu menunggu gdb (`-s -S`).
+
+`insert-bonus` memasukkan `echo`, `args`, `badapple`, `memtest`, dan `demo.sh` ke root directory.
+
+| Bonus | Cara mencoba | File utama |
+|---|---|---|
+| Recent commands | panah atas/bawah di prompt, menyimpan 16 perintah terakhir | `shell/shell-history.c`, `shell/shell-readline.c` |
+| Tab autocomplete | `ca<Tab>` jadi `cat`, `cat de<Tab>`, `c<Tab>` menampilkan semua kandidat | `shell/shell-autocomplete.c` |
+| Shell script | `sh demo.sh` (baris kosong dan baris berawalan `#` dilewati) | `shell/cmd-sh.c`, `other/demo.sh` |
+| C runtime argc/argv | `args satu dua tiga`, `exec echo halo` | `process/process-args.c`, syscall 20 |
+| Aplikasi lain | `echo halo dunia` jalan sebagai process terpisah, shell menunggu sampai selesai | `user-echo.c`, `shell/cmd-run.c` |
+| Heap (malloc/free) | `memtest`, `meminfo`, `meminfo -v` | `memory/heap.c`, `shell/shell-heap.c`, `user-memtest.c` |
+| PATH array dinamis | `path`, `export PATH=/a:/b`, `export PATH=$PATH:/c` | `shell/shell-path.c` |
+| PC speaker | `beep`, `beep 1000 200`, `beep tune` | `cpu/syscall-ext.c`, `shell/cmd-beep.c` |
+| Bad Apple text | `badapple`, Ctrl+C untuk berhenti | `user-badapple.c`, `tools/badapple-pack.py` |
+| Tambahan lain | banner dan animasi pembuka, `help`, `clear`, `shutdown`, `bg <warna>`, `osjur`/`fetch`, scroll layar dengan PgUp/PgDn | `shell/shell-banner.c`, `shell/cmd-*.c` |
+
+Syscall tambahan untuk bonus:
+
+| `eax` | Syscall |
+|---|---|
+| 15 | ambil tick PIT |
+| 16 | bersihkan layar shell |
+| 17 | shutdown |
+| 18 | beep (frekuensi dalam Hz, 0 untuk mematikan) |
+| 20 | `exec` dengan argumen |
+| 21 | ganti warna background shell |
+| 22 | `malloc` |
+| 23 | `free` |
+| 24 | ringkasan heap (dipakai `meminfo`) |
+| 25 | gulung layar shell |
+| 26 | daftar blok heap (dipakai `meminfo -v`) |
+
+Logika syscall bonus ada di `cpu/syscall-ext.c`; `interrupt.c` hanya ditambah `case` dan pengecekan pointer.
+
+Catatan desain:
+
+- argc/argv: kernel menyalin argumen ke stack kernel dulu, karena pointer milik shell sudah tidak valid setelah CR3 diganti. Setelah process dibuat, string, array `argv`, pointer `argv`, dan `argc` ditulis di puncak user stack. `crt0.s` tidak perlu diubah sebab `call main` sudah menghasilkan layout cdecl.
+- Mengetik nama program langsung (misalnya `echo` atau `badapple`) menjalankannya di foreground. Shell menunggu sampai PID-nya hilang dari daftar process, dan Ctrl+C bisa mematikannya. `exec` tetap berjalan di background sesuai spesifikasi wajib. Program dicari di folder sekarang dulu, lalu di setiap folder pada PATH (awalnya hanya `/`).
+- Heap: tiap process sudah punya 4 MiB virtual yang terpetakan, jadi heap memakai ruang di antara program dan stack, yaitu `0x100000` sampai `0x380000`. Tidak ada frame baru dan `paging.c` tidak diubah. Alokasi dilakukan kernel dengan first fit, blok besar dipecah, dan blok kosong yang bersebelahan digabung lagi saat `free`. `free` dua kali pada pointer yang sama ditolak. `memtest` menguji semua hal tersebut.
+- PATH disimpan sebagai array `char*` di heap shell. Kalau penuh, array baru berukuran dua kali lipat dialokasikan, isinya disalin, lalu array lama di-`free`.
+- Shutdown menulis 0x2000 ke port 0x604 (QEMU dengan SeaBIOS), dengan fallback ke 0xB004 untuk QEMU versi lama.
+- PC speaker memakai PIT channel 2, sedangkan channel 0 tetap dipakai scheduler. Suara hanya terdengar lewat `make run-audio` (backend default `pa`, bisa diganti dengan `make run-audio AUDIO_BACKEND=alsa`).
+- Bad Apple: 80x24 karakter (baris 0 untuk info fps dan jam), 1 bit per karakter, 20 fps. Data dipecah per 280 frame (67.200 byte) ke file `ba00`, `ba01`, dan seterusnya, karena ukuran maksimal satu file di EXT2 kami adalah (12 + 128) x 512 = 71.680 byte. Pacing memakai tick PIT 1 ms. Tick hanya bertambah saat CPU berada di user mode, sehingga waktu di dalam syscall tidak terhitung. Dari pengujian kami, hasilnya sekitar 20 fps menurut jam dinding, termasuk saat berpindah file.
 
 ### Maskot Kelompok
 

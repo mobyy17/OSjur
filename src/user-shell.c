@@ -9,44 +9,11 @@ char     cwd_path[SHELL_PATH_MAX] = "/";
 char     *pipe_in                = 0;
 uint32_t pipe_in_len             = 0;
 
-static void print_prompt(void) {
+void shell_print_prompt(void) {
     print("OSjur", COLOR_PROMPT);
     print(":", COLOR_TEXT);
     print(cwd_path, COLOR_PATH);
     print("$ ", COLOR_TEXT);
-}
-
-/**
- * Baca satu baris dari keyboard ke line (null-terminated), sambil menampilkan ketikan.
- * Input dibatasi max_len karakter supaya baris tidak terlipat ke bawah,
- * karena backspace di framebuffer tidak bisa naik ke baris sebelumnya.
- *
- * @return false kalau baris dibatalkan dengan Ctrl+C
- */
-static bool read_line(char *line, uint32_t max_len) {
-    uint32_t len = 0;
-    while (true) {
-        char c = 0;
-        syscall(SYSCALL_GETCHAR, (uint32_t) &c, 0, 0);
-
-        if (c == '\n') {
-            syscall(SYSCALL_PUTCHAR, '\n', COLOR_TEXT, 0);
-            line[len] = '\0';
-            return true;
-        } else if (c == '\b') {
-            if (len > 0) { // jangan sampai menghapus prompt
-                len--;
-                syscall(SYSCALL_PUTCHAR, '\b', COLOR_TEXT, 0);
-            }
-        } else if (c == KEY_CTRL_C_CHAR) {
-            print("^C\n", COLOR_TEXT);
-            return false;
-        } else if (c >= ' ' && len < max_len) {
-            // karakter kontrol lain (tab, panah, esc) diabaikan
-            line[len++] = c;
-            syscall(SYSCALL_PUTCHAR, (uint32_t) c, COLOR_TEXT, 0);
-        }
-    }
 }
 
 /**
@@ -85,7 +52,17 @@ static void run_command(int argc, char *argv[]) {
     else if (str_eq(cmd, "exec"))  cmd_exec(argc, argv);
     else if (str_eq(cmd, "ps"))    cmd_ps(argc, argv);
     else if (str_eq(cmd, "kill"))  cmd_kill(argc, argv);
+    else if (str_eq(cmd, "sh"))       cmd_sh(argc, argv);
+    else if (str_eq(cmd, "clear"))    cmd_clear(argc, argv);
+    else if (str_eq(cmd, "shutdown")) cmd_shutdown(argc, argv);
     else if (str_eq(cmd, "beep"))     cmd_beep(argc, argv);
+    else if (str_eq(cmd, "help"))     cmd_help(argc, argv);
+    else if (str_eq(cmd, "osjur") || str_eq(cmd, "fetch")) cmd_osjur(argc, argv);
+    else if (str_eq(cmd, "bg"))       cmd_bg(argc, argv);
+    else if (str_eq(cmd, "meminfo"))  cmd_meminfo(argc, argv);
+    else if (str_eq(cmd, "export"))   cmd_export(argc, argv);
+    else if (str_eq(cmd, "path"))     cmd_path(argc, argv);
+    else if (run_program(argc, argv)) ; // nama file executable
     else {
         out_puts(cmd);
         out_puts(": perintah tidak dikenal\n");
@@ -98,6 +75,10 @@ static void run_command(int argc, char *argv[]) {
  * dan menjadi pipe_in untuk command di kanannya. Output command terakhir
  * tetap di buffer output dan dicetak oleh main().
  */
+/* Buffer milik main(), disimpan supaya shell_run_line bisa dipanggil dari sh */
+static char *shell_out_buffer;
+static char *shell_pipe_buffer;
+
 static void run_line(char *line, char *out_buffer, char *pipe_buffer) {
     char *segment = line;
     pipe_in     = 0;
@@ -138,6 +119,10 @@ static void run_line(char *line, char *out_buffer, char *pipe_buffer) {
     pipe_in_len = 0;
 }
 
+void shell_run_line(char *line) {
+    run_line(line, shell_out_buffer, shell_pipe_buffer);
+}
+
 int main(void) {
     // Buffer besar ditaruh di stack user (sekitar 3 MiB tersedia di bawah 0x400000),
     // bukan global, supaya ukuran file shell di disk tetap kecil.
@@ -146,10 +131,14 @@ int main(void) {
     char pipe_buffer[SHELL_OUT_MAX];
 
     out_init(out_buffer);
+    shell_out_buffer  = out_buffer;
+    shell_pipe_buffer = pipe_buffer;
     syscall(SYSCALL_KEYBOARD_ON, 0, 0, 0);
+    syscall(SYSCALL_SET_BG, SHELL_DEFAULT_BG, 0, 0);
+    banner_show(true);
 
     while (true) {
-        print_prompt();
+        shell_print_prompt();
 
         // "OSjur:" + path + "$ " sudah memakai sebagian dari 80 kolom
         uint32_t prompt_len = 6 + str_len(cwd_path) + 2;
@@ -157,7 +146,7 @@ int main(void) {
         if (prompt_len + max_len > 79)
             max_len = prompt_len < 79 ? 79 - prompt_len : 0;
 
-        if (!read_line(line, max_len))
+        if (!shell_read_line(line, max_len))
             continue;
 
         run_line(line, out_buffer, pipe_buffer);
