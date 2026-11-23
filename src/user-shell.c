@@ -53,7 +53,16 @@ static void run_command(int argc, char *argv[]) {
     else if (str_eq(cmd, "ps"))    cmd_ps(argc, argv);
     else if (str_eq(cmd, "kill"))  cmd_kill(argc, argv);
     else if (str_eq(cmd, "sh"))       cmd_sh(argc, argv);
+    else if (str_eq(cmd, "clear"))    cmd_clear(argc, argv);
+    else if (str_eq(cmd, "shutdown")) cmd_shutdown(argc, argv);
     else if (str_eq(cmd, "beep"))     cmd_beep(argc, argv);
+    else if (str_eq(cmd, "help"))     cmd_help(argc, argv);
+    else if (str_eq(cmd, "osjur") || str_eq(cmd, "fetch")) cmd_osjur(argc, argv);
+    else if (str_eq(cmd, "bg"))       cmd_bg(argc, argv);
+    else if (str_eq(cmd, "meminfo"))  cmd_meminfo(argc, argv);
+    else if (str_eq(cmd, "export"))   cmd_export(argc, argv);
+    else if (str_eq(cmd, "path"))     cmd_path(argc, argv);
+    else if (run_program(argc, argv)) ; // nama file executable
     else {
         out_puts(cmd);
         out_puts(": perintah tidak dikenal\n");
@@ -125,6 +134,8 @@ int main(void) {
     shell_out_buffer  = out_buffer;
     shell_pipe_buffer = pipe_buffer;
     syscall(SYSCALL_KEYBOARD_ON, 0, 0, 0);
+    syscall(SYSCALL_SET_BG, SHELL_DEFAULT_BG, 0, 0);
+    banner_show(true);
 
     while (true) {
         shell_print_prompt();

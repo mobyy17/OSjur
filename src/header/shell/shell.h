@@ -53,9 +53,32 @@
 #define SYSCALL_PS             13
 #define SYSCALL_WRITE_AT       14
 #define SYSCALL_GET_TICK       15
+#define SYSCALL_CLEAR_SCREEN   16
+#define SYSCALL_SHUTDOWN       17
 #define SYSCALL_BEEP           18
 #define SYSCALL_EXEC_ARGS      20
+#define SYSCALL_SET_BG         21
+#define SYSCALL_MALLOC         22
+#define SYSCALL_FREE           23
+#define SYSCALL_HEAP_INFO      24
 #define SYSCALL_SCROLL         25
+#define SYSCALL_HEAP_BLOCK     26
+
+struct HeapInfo {
+    uint32_t total;
+    uint32_t used;
+    uint32_t free;
+    uint32_t block_count;
+    uint32_t used_blocks;
+    uint32_t largest_free;
+};
+struct HeapBlockInfo {
+    uint32_t addr;
+    uint32_t size;
+    bool     used;
+};
+
+#define SHELL_DEFAULT_BG       0x0
 
 /* Kode tombol dari keyboard driver, sama dengan KEY_* di keyboard.h */
 #define KEY_UP_CHAR    0x11
@@ -257,7 +280,29 @@ void beep(uint32_t freq, uint32_t ms);
 void write_at(uint32_t row, uint32_t col, const char *str, uint32_t color);
 bool process_alive(uint32_t pid);
 
+/* shell-banner.c */
+void banner_show(bool animate);
+
+/* cmd-run.c: jalankan executable di foreground (shell menunggu, Ctrl+C mematikannya).
+ * @return false kalau file tidak ditemukan di folder sekarang maupun root */
+bool run_program(int argc, char *argv[]);
+
 void cmd_sh(int argc, char *argv[]);
+void cmd_shutdown(int argc, char *argv[]);
 void cmd_beep(int argc, char *argv[]);
+void cmd_clear(int argc, char *argv[]);
+void cmd_help(int argc, char *argv[]);
+void cmd_osjur(int argc, char *argv[]);
+void cmd_bg(int argc, char *argv[]);
+
+/* Heap dan PATH (bonus) */
+void *malloc(uint32_t size);
+void free(void *ptr);
+void out_dec(uint32_t v);
+void out_hex32(uint32_t v);
+bool path_find_program(const char *name, uint32_t *parent);
+void cmd_meminfo(int argc, char *argv[]);
+void cmd_export(int argc, char *argv[]);
+void cmd_path(int argc, char *argv[]);
 
 #endif
