@@ -66,6 +66,8 @@ static char extended_scancode_to_key(uint8_t scancode) {
         case EXT_SCANCODE_DOWN:  return KEY_ARROW_DOWN;
         case EXT_SCANCODE_LEFT:  return KEY_ARROW_LEFT;
         case EXT_SCANCODE_RIGHT: return KEY_ARROW_RIGHT;
+        case EXT_SCANCODE_PAGE_UP:   return KEY_PAGE_UP;
+        case EXT_SCANCODE_PAGE_DOWN: return KEY_PAGE_DOWN;
         default:                 return 0;
     }
 }

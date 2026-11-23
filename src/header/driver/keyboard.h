@@ -8,6 +8,8 @@
 
 #define EXT_SCANCODE_UP        0x48
 #define EXT_SCANCODE_DOWN      0x50
+#define EXT_SCANCODE_PAGE_UP   0x49
+#define EXT_SCANCODE_PAGE_DOWN 0x51
 #define EXT_SCANCODE_LEFT      0x4B
 #define EXT_SCANCODE_RIGHT     0x4D
 #define SCANCODE_CTRL_PRESS    0x1D
@@ -26,6 +28,8 @@
 #define KEY_ARROW_DOWN         0x12
 #define KEY_ARROW_LEFT         0x13
 #define KEY_ARROW_RIGHT        0x14
+#define KEY_PAGE_UP            0x15
+#define KEY_PAGE_DOWN          0x16
 
 /**
  * keyboard_scancode_1_to_ascii_map[256], Convert scancode values that correspond to ASCII printables

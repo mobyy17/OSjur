@@ -67,4 +67,28 @@ void framebuffer_putchar(char c, uint8_t color);
  */
 void framebuffer_puts(const char *str, uint32_t count, uint8_t color);
 
+/**
+ * Kosongkan baris 1 sampai 24 dan kembalikan cursor ke awal baris 1.
+ * Di baris 0 hanya kolom 0-71 yang dihapus, kolom 72-79 dipakai program clock.
+ */
+void framebuffer_clear_shell(void);
+
+/**
+ * Ganti warna background shell (0-15). Mode blink VGA dimatikan supaya 16 warna bg bisa dipakai.
+ * Sel yang bg nya masih warna lama ikut diwarnai ulang.
+ */
+void framebuffer_set_background(uint8_t bg);
+
+/** @return Warna background shell sekarang */
+uint8_t framebuffer_get_background(void);
+
+/**
+ * Gulung tampilan shell (bonus scrollable shell). Baris 0 (clock) tidak ikut.
+ * @param delta Jumlah baris, positif = ke atas (lebih lama), negatif = ke bawah, 0 = kembali ke paling bawah
+ */
+void framebuffer_scroll_view(int32_t delta);
+
+/** Kembali ke tampilan normal kalau sedang digulung */
+void framebuffer_scroll_reset(void);
+
 #endif
