@@ -17,13 +17,20 @@ CFLAGS        = $(DEBUG_CFLAG) $(WARNING_CFLAG) $(STRIP_CFLAG) -m32 -c -I$(SOURC
 AFLAGS        = -f elf32 -g -F dwarf
 LFLAGS        = -T $(SOURCE_FOLDER)/linker.ld -melf_i386
 
-.PHONY: run start all build disk clean kernel iso inserter user-shell insert-shell user-hello user-clock insert-apps
+.PHONY: run start all build disk clean kernel iso inserter user-shell insert-shell user-hello user-clock insert-apps \
+	run-audio user-badapple badapple-data insert-badapple
 
 run: all
 	@qemu-system-i386 -s -S -drive file=$(OUTPUT_FOLDER)/$(DISK_NAME).bin,format=raw,if=ide,index=0,media=disk -cdrom $(OUTPUT_FOLDER)/$(ISO_NAME).iso
 
 start: all
 	@qemu-system-i386 -drive file=$(OUTPUT_FOLDER)/$(DISK_NAME).bin,format=raw,if=ide,index=0,media=disk -cdrom $(OUTPUT_FOLDER)/$(ISO_NAME).iso
+
+# Sama seperti start, ditambah suara PC speaker (bonus). Ganti pa dengan alsa/sdl kalau backend pa tidak ada.
+AUDIO_BACKEND ?= pa
+run-audio: all
+	@qemu-system-i386 -drive file=$(OUTPUT_FOLDER)/$(DISK_NAME).bin,format=raw,if=ide,index=0,media=disk -cdrom $(OUTPUT_FOLDER)/$(ISO_NAME).iso \
+		-audiodev $(AUDIO_BACKEND),id=spk -machine pcspk-audiodev=spk
 
 all: build
 
@@ -35,6 +42,7 @@ disk:
 clean:
 	rm -rf $(OUTPUT_FOLDER)/*.o $(OUTPUT_FOLDER)/*.iso $(OUTPUT_FOLDER)/kernel
 	rm -f $(OUTPUT_FOLDER)/inserter $(OUTPUT_FOLDER)/shell $(OUTPUT_FOLDER)/hello $(OUTPUT_FOLDER)/clock
+	rm -f $(OUTPUT_FOLDER)/badapple
 
 kernel:
 	@mkdir -p $(OUTPUT_FOLDER)
@@ -54,6 +62,7 @@ kernel:
 	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/driver/cmos.c -o $(OUTPUT_FOLDER)/cmos.o
 	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/process/process.c -o $(OUTPUT_FOLDER)/process.o
 	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/scheduler/scheduler.c -o $(OUTPUT_FOLDER)/scheduler.o
+	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/cpu/syscall-ext.c -o $(OUTPUT_FOLDER)/syscall-ext.o
 	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/kernel.c -o $(OUTPUT_FOLDER)/kernel.o
 	@$(LIN) $(LFLAGS) $(OUTPUT_FOLDER)/*.o -o $(OUTPUT_FOLDER)/kernel
 	@echo Linking object files and generate elf32...
@@ -80,7 +89,7 @@ user-shell:
 	@$(CC)  $(CFLAGS) -fno-pie $(SOURCE_FOLDER)/user-shell.c $(SOURCE_FOLDER)/shell/*.c \
 		$(SOURCE_FOLDER)/stdlib/string.c
 	@$(LIN) -T $(SOURCE_FOLDER)/user-linker.ld -melf_i386 --oformat=binary \
-		crt0.o user-shell.o shell-lib.o cmd-*.o string.o -o $(OUTPUT_FOLDER)/shell
+		crt0.o user-shell.o shell-*.o cmd-*.o string.o -o $(OUTPUT_FOLDER)/shell
 	@echo Linking object shell object files and generate flat binary...
 	@size --target=binary $(OUTPUT_FOLDER)/shell
 	@rm -f *.o
@@ -110,3 +119,27 @@ insert-apps: inserter user-hello user-clock
 	@echo Inserting apps into root directory...
 	@cd $(OUTPUT_FOLDER); ./inserter -f hello 1 $(DISK_NAME).bin
 	@cd $(OUTPUT_FOLDER); ./inserter -f clock 1 $(DISK_NAME).bin
+
+# ===== Aplikasi bonus =====
+user-badapple:
+	@$(ASM) $(AFLAGS) $(SOURCE_FOLDER)/crt0.s -o crt0.o
+	@$(CC)  $(CFLAGS) -fno-pie $(SOURCE_FOLDER)/user-badapple.c -o user-badapple.o
+	@$(LIN) -T $(SOURCE_FOLDER)/user-linker.ld -melf_i386 --oformat=binary \
+		crt0.o user-badapple.o -o $(OUTPUT_FOLDER)/badapple
+	@size --target=binary $(OUTPUT_FOLDER)/badapple
+	@rm -f crt0.o user-badapple.o
+
+# Bad Apple: ubah video jadi frame 80x24 1 bit (butuh ffmpeg + python3).
+# Pemakaian: make badapple-data VIDEO=path/ke/badapple.mp4
+badapple-data:
+	@python3 tools/badapple-pack.py "$(VIDEO)" $(OUTPUT_FOLDER)/badapple-data
+
+insert-badapple: inserter
+	@if [ ! -f $(OUTPUT_FOLDER)/badapple-data/ba00 ]; then \
+		echo "Data Bad Apple belum ada, jalankan dulu: make badapple-data VIDEO=<file video>"; exit 1; \
+	fi
+	@for f in $(OUTPUT_FOLDER)/badapple-data/ba[0-9][0-9]; do \
+		name=$$(basename $$f); cp $$f $(OUTPUT_FOLDER)/$$name; \
+		(cd $(OUTPUT_FOLDER); ./inserter -f $$name 1 $(DISK_NAME).bin > /dev/null) || exit 1; \
+		rm -f $(OUTPUT_FOLDER)/$$name; echo "  $$name"; \
+	done

@@ -52,6 +52,8 @@
 #define SYSCALL_KILL           12
 #define SYSCALL_PS             13
 #define SYSCALL_WRITE_AT       14
+#define SYSCALL_GET_TICK       15
+#define SYSCALL_BEEP           18
 
 /* Sama dengan konstanta di header/process/process.h. process.h tidak di-include
  * karena ikut membawa header kernel (interrupt, paging). */
@@ -215,5 +217,14 @@ void cmd_grep(int argc, char *argv[]);  // Lewi
 void cmd_exec(int argc, char *argv[]);  // Rapip
 void cmd_ps(int argc, char *argv[]);    // Rapip
 void cmd_kill(int argc, char *argv[]);  // Rapip
+
+/* shell-util.c */
+uint32_t get_tick(void);
+void sleep_ms(uint32_t ms);
+void beep(uint32_t freq, uint32_t ms);
+void write_at(uint32_t row, uint32_t col, const char *str, uint32_t color);
+bool process_alive(uint32_t pid);
+
+void cmd_beep(int argc, char *argv[]);
 
 #endif

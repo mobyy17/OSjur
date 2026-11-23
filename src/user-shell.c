@@ -85,6 +85,7 @@ static void run_command(int argc, char *argv[]) {
     else if (str_eq(cmd, "exec"))  cmd_exec(argc, argv);
     else if (str_eq(cmd, "ps"))    cmd_ps(argc, argv);
     else if (str_eq(cmd, "kill"))  cmd_kill(argc, argv);
+    else if (str_eq(cmd, "beep"))     cmd_beep(argc, argv);
     else {
         out_puts(cmd);
         out_puts(": perintah tidak dikenal\n");
