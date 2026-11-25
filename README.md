@@ -398,7 +398,7 @@ src/
 ├── external/     inserter (jalan di host)
 └── user-*.c      shell, hello, clock, echo, args, memtest, badapple
 other/            grub1, demo.sh
-tools/            badapple-pack.py, readme-art.py
+tools/            badapple-pack.py
 test/             kernel-test.c untuk test.mk
 assets/           demo-shell.gif, readme/
 ```
